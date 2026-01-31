@@ -67,8 +67,11 @@
     </div>
 
     <div class="row">
+      <div class="card" style="flex:1">
+        <h2>Stats</h2>
+        <div id="stats" class="muted">Loading…</div>
+      </div>
 
-    <div class="row">
       <div class="card" style="flex:1">
         <h2>Leaderboard (Daily)</h2>
         <div id="lb" class="muted">Loading…</div>
@@ -101,10 +104,23 @@
 
       async function load() {
         try {
-          const [lb, runs] = await Promise.all([
+          const [stats, lb, runs] = await Promise.all([
+            j('/api/stats'),
             j('/api/leaderboard?mode=daily&limit=20'),
             j('/api/runs')
           ]);
+
+          const statsEl = document.getElementById('stats');
+          statsEl.innerHTML = `
+            <table>
+              <tbody>
+                <tr><th>Total games played</th><td>${esc(stats.stats.totalRunsFinished)}</td></tr>
+                <tr><th>Runs started</th><td>${esc(stats.stats.totalRunsStarted)}</td></tr>
+                <tr><th>Agents joined</th><td>${esc(stats.stats.uniqueAgents)}</td></tr>
+              </tbody>
+            </table>
+            <p class="muted" style="margin-top:10px">Note: until persistent storage is enabled, these numbers can reset on deploys/cold starts.</p>
+          `;
 
           const lbEl = document.getElementById('lb');
           if (!lb.leaderboard.length) {
@@ -149,8 +165,11 @@
 
           document.getElementById('hint').textContent = 'Tip: daily leaderboard compares bots fairly because everyone gets the same seed.';
         } catch (e) {
-          document.getElementById('lb').textContent = String(e);
-          document.getElementById('runs').textContent = String(e);
+          const msg = String(e);
+          const s = document.getElementById('stats');
+          if (s) s.textContent = msg;
+          document.getElementById('lb').textContent = msg;
+          document.getElementById('runs').textContent = msg;
         }
       }
 

@@ -2,7 +2,7 @@ import path from 'node:path';
 import express from 'express';
 import { z } from 'zod';
 import { createRun, dailySeedForDate, getLegalActions, submitAction } from './game/lobsterRun.js';
-import { getRun, listLeaderboard, listRuns, recordScore, saveRun } from './store/memoryStore.js';
+import { getRun, getStats, listLeaderboard, listRuns, recordScore, saveRun } from './store/memoryStore.js';
 
 export const app = express();
 app.use(express.json({ limit: '1mb' }));
@@ -20,6 +20,10 @@ app.get('/healthz', (_req, res) => res.json({ ok: true }));
 
 app.get('/api/runs', (_req, res) => {
   res.json({ runs: listRuns() });
+});
+
+app.get('/api/stats', (_req, res) => {
+  res.json({ stats: getStats() });
 });
 
 app.get('/api/leaderboard', (req, res) => {

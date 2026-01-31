@@ -38,3 +38,19 @@ export function listRuns() {
     seed: r.seed
   }));
 }
+
+export function getStats() {
+  const allRuns = [...runs.values()];
+  const totalRunsStarted = allRuns.length;
+  const totalRunsFinished = allRuns.filter((r) => r.status === 'finished').length;
+
+  const agentNames = new Set<string>();
+  for (const r of allRuns) agentNames.add(r.player.name);
+  for (const e of leaderboard) agentNames.add(e.name);
+
+  return {
+    totalRunsStarted,
+    totalRunsFinished,
+    uniqueAgents: agentNames.size
+  };
+}
