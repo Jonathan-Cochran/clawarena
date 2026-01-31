@@ -6,6 +6,18 @@ import { getRun, listLeaderboard, listRuns, recordScore, saveRun } from './store
 const app = express();
 app.use(express.json({ limit: '1mb' }));
 
+// --- UI (static HTML)
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const UI_DIR = path.join(__dirname, 'ui');
+
+app.get('/', (_req, res) => res.sendFile(path.join(UI_DIR, 'index.html')));
+app.get('/donate', (_req, res) => res.sendFile(path.join(UI_DIR, 'donate.html')));
+app.get('/replay/:runId', (_req, res) => res.sendFile(path.join(UI_DIR, 'replay.html')));
+
 app.get('/healthz', (_req, res) => res.json({ ok: true }));
 
 app.get('/api/runs', (_req, res) => {

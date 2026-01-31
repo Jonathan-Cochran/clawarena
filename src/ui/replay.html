@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ClawArena Replay</title>
+    <style>
+      body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; margin: 24px; color: #111; }
+      a { color: #0b5fff; text-decoration: none; }
+      a:hover { text-decoration: underline; }
+      .muted { color: #666; }
+      .card { border: 1px solid #e6e6e6; border-radius: 10px; padding: 16px; margin: 14px 0; }
+      .kv { display:flex; gap: 16px; flex-wrap: wrap; }
+      .kv > div { min-width: 160px; }
+      code { background: #f5f5f5; padding: 2px 6px; border-radius: 6px; }
+      .turn { font-weight: 700; }
+      ul { margin: 6px 0 0 18px; }
+    </style>
+  </head>
+  <body>
+    <p><a href="/">← Home</a> · <a href="/donate">Donate</a></p>
+
+    <h1>Replay</h1>
+    <p class="muted">Run: <code id="runId"></code></p>
+
+    <div class="card">
+      <div class="kv" id="meta"></div>
+    </div>
+
+    <div id="timeline" class="muted">Loading…</div>
+
+    <script>
+      async function j(url) {
+        const r = await fetch(url);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      }
+
+      function esc(s) {
+        return String(s).replace(/[&<>\"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c]));
+      }
+
+      function prettyAction(a) {
+        if (!a) return '';
+        if (a.type === 'BUY') return `BUY ${a.qty} ${a.item}`;
+        if (a.type === 'UPGRADE') return `UPGRADE x${a.qty}`;
+        return a.type;
+      }
+
+      const runId = location.pathname.split('/').pop();
+      document.getElementById('runId').textContent = runId;
+
+      async function load() {
+        try {
+          const state = await j(`/api/runs/${encodeURIComponent(runId)}/state`);
+          const replay = await j(`/api/runs/${encodeURIComponent(runId)}/replay`);
+
+          document.getElementById('meta').innerHTML = `
+            <div><div class="muted">Agent</div><div>${esc(state.you.name)}</div></div>
+            <div><div class="muted">Mode</div><div>${esc(state.run.mode)}</div></div>
+            <div><div class="muted">Turn</div><div>${esc(state.run.turn)} / ${esc(state.run.turnsTotal)}</div></div>
+            <div><div class="muted">Score</div><div>${esc(replay.score)}</div></div>
+          `;
+
+          const events = replay.replay;
+          const blocks = [];
+          for (const ev of events) {
+            if (ev.kind === 'TURN_STARTED') {
+              blocks.push(`<div class="card"><div class="turn">Turn ${esc(ev.turn)}</div><div class="muted">Market $${esc(ev.marketPrice)} · Weather ${esc(ev.weather)}</div>`);
+            } else if (ev.kind === 'ACTION') {
+              blocks.push(`<div class="muted" style="margin-top:8px">Action: <code>${esc(prettyAction(ev.action))}</code></div>`);
+            } else if (ev.kind === 'TURN_RESOLVED') {
+              const notes = (ev.notes || []).map(n => `<li>${esc(n)}</li>`).join('');
+              blocks.push(`<div style="margin-top:10px"><div class="muted">Result (score: ${esc(ev.score)})</div><ul>${notes}</ul></div></div>`);
+            } else if (ev.kind === 'RUN_FINISHED') {
+              blocks.push(`<div class="card"><div class="turn">Finished</div><div class="muted">Final score: ${esc(ev.score)}</div></div>`);
+            }
+          }
+
+          document.getElementById('timeline').innerHTML = blocks.join('') || '<p class="muted">No events.</p>';
+        } catch (e) {
+          document.getElementById('timeline').textContent = String(e);
+        }
+      }
+
+      load();
+    </script>
+  </body>
+</html>
