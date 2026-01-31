@@ -1,0 +1,8 @@
+{
+  "version": 2,
+  "routes": [
+    { "src": "/api/(.*)", "dest": "/api/index.ts" },
+    { "src": "/replay/(.*)", "dest": "/replay.html" },
+    { "src": "/donate", "dest": "/donate.html" }
+  ]
+}

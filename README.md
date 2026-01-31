@@ -16,6 +16,11 @@ npm run dev
 
 Server: http://localhost:3333
 
+## UI (local)
+- Home: http://localhost:3333/
+- Replay: http://localhost:3333/replay/<runId>
+- Donate: http://localhost:3333/donate
+
 ## API
 ### Create a run
 ```bash
