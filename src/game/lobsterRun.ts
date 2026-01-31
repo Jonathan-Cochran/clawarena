@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { mulberry32, pick } from './rng.js';
-import type { LobsterAction, MatchState, PlayerId, PlayerState, ReplayEvent } from './types.js';
+import type { LobsterAction, ReplayEvent, RunState } from './types.js';
 
 function now() {
   return new Date().toISOString();
@@ -10,87 +10,78 @@ function newId(prefix: string) {
   return `${prefix}_${crypto.randomBytes(6).toString('hex')}`;
 }
 
-export function createMatch(params: { seed?: number; turnsTotal?: number; maxPlayers?: number }): MatchState {
-  const seed = params.seed ?? Math.floor(Math.random() * 1_000_000);
-  const turnsTotal = params.turnsTotal ?? 10;
-  const maxPlayers = params.maxPlayers ?? 4;
+export function dailySeedForDate(d: Date, salt = 0) {
+  // YYYY-MM-DD
+  const iso = d.toISOString().slice(0, 10);
+  let h = 2166136261;
+  for (const ch of `${iso}:${salt}`) {
+    h ^= ch.charCodeAt(0);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
 
-  const matchId = newId('m');
+export function createRun(params: {
+  seed?: number;
+  turnsTotal?: number;
+  mode?: RunState['mode'];
+  playerName: string;
+}): RunState {
+  const seed = params.seed ?? Math.floor(Math.random() * 1_000_000);
+  const turnsTotal = params.turnsTotal ?? 12;
+  const mode = params.mode ?? 'free';
+
+  const runId = newId('r');
   const replay: ReplayEvent[] = [
-    { t: now(), kind: 'MATCH_CREATED', seed, turnsTotal, maxPlayers }
+    { t: now(), kind: 'RUN_CREATED', seed, turnsTotal, mode }
   ];
 
   const r = mulberry32(seed);
   const marketPrice = 8 + Math.floor(r() * 5); // 8..12
   const weather = pick(r, ['calm', 'breezy', 'storm'] as const);
 
-  const state: MatchState = {
-    id: matchId,
+  const state: RunState = {
+    id: runId,
     createdAt: now(),
     seed,
+    mode,
     turnsTotal,
-    maxPlayers,
-    status: 'lobby',
+    status: 'running',
     turn: 1,
-    players: {},
-    pendingActions: {},
+    player: {
+      name: params.playerName,
+      cash: 100,
+      bait: 5,
+      fuel: 5,
+      ice: 0,
+      capacity: 20,
+      catch: 0,
+      insured: false,
+      score: 0
+    },
+    pendingAction: null,
     public: {
       turn: 1,
       turnsTotal,
       marketPricePerLobster: marketPrice,
-      weather,
-      leaderboard: []
+      weather
     },
     replay
   };
 
+  state.replay.push({
+    t: now(),
+    kind: 'TURN_STARTED',
+    turn: state.turn,
+    marketPrice: state.public.marketPricePerLobster,
+    weather: state.public.weather
+  });
+
   return state;
 }
 
-export function joinMatch(state: MatchState, agentName: string): PlayerId {
-  if (state.status !== 'lobby') throw new Error('Match is not joinable');
-  const count = Object.keys(state.players).length;
-  if (count >= state.maxPlayers) throw new Error('Match is full');
-
-  const playerId = newId('p');
-  const player: PlayerState = {
-    id: playerId,
-    name: agentName,
-    cash: 100,
-    bait: 5,
-    fuel: 5,
-    ice: 0,
-    capacity: 20,
-    catch: 0,
-    insured: false,
-    score: 0
-  };
-
-  state.players[playerId] = player;
-  state.pendingActions[playerId] = null;
-  state.replay.push({ t: now(), kind: 'PLAYER_JOINED', playerId, name: agentName });
-
-  // Auto-start when full
-  if (Object.keys(state.players).length >= state.maxPlayers) {
-    state.status = 'running';
-    state.replay.push({
-      t: now(),
-      kind: 'TURN_STARTED',
-      turn: state.turn,
-      marketPrice: state.public.marketPricePerLobster,
-      weather: state.public.weather
-    });
-  }
-
-  refreshLeaderboard(state);
-  return playerId;
-}
-
-export function getLegalActions(state: MatchState, playerId: PlayerId): LobsterAction[] {
-  const p = state.players[playerId];
-  if (!p) return [];
-
-  const actions: LobsterAction[] = [
+export function getLegalActions(_state: RunState): LobsterAction[] {
+  return [
     { type: 'FISH_INSHORE' },
     { type: 'FISH_OFFSHORE' },
     { type: 'INSURE' },
@@ -99,27 +90,20 @@ export function getLegalActions(state: MatchState, playerId: PlayerId): LobsterA
     { type: 'BUY', item: 'fuel', qty: 1 },
     { type: 'BUY', item: 'ice', qty: 1 }
   ];
-
-  return actions;
 }
 
-export function submitAction(state: MatchState, playerId: PlayerId, turn: number, action: LobsterAction): void {
-  if (state.status !== 'running') throw new Error('Match not running');
+export function submitAction(state: RunState, turn: number, action: LobsterAction): void {
+  if (state.status !== 'running') throw new Error('Run not running');
   if (turn !== state.turn) throw new Error('Wrong turn');
-  if (!state.players[playerId]) throw new Error('Unknown player');
-  if (state.pendingActions[playerId] != null) throw new Error('Action already submitted');
+  if (state.pendingAction != null) throw new Error('Action already submitted');
 
-  state.pendingActions[playerId] = action;
-  state.replay.push({ t: now(), kind: 'ACTION', turn, playerId, action });
+  state.pendingAction = action;
+  state.replay.push({ t: now(), kind: 'ACTION', turn, action });
 
-  // If all actions submitted, resolve and advance
-  const allIn = Object.values(state.pendingActions).every((a) => a != null);
-  if (allIn) {
-    resolveTurn(state);
-  }
+  resolveTurn(state);
 }
 
-function resolveTurn(state: MatchState) {
+function resolveTurn(state: RunState) {
   const r = mulberry32(state.seed + state.turn); // deterministic per turn
   const notes: string[] = [];
 
@@ -128,50 +112,41 @@ function resolveTurn(state: MatchState) {
   state.public.marketPricePerLobster = Math.max(4, state.public.marketPricePerLobster + marketDelta);
   state.public.weather = pick(r, ['calm', 'breezy', 'storm'] as const);
 
-  for (const [pid, act] of Object.entries(state.pendingActions)) {
-    const p = state.players[pid]!;
-    const action = act!;
+  const p = state.player;
+  const action = state.pendingAction!;
 
-    // Clear insurance each turn (must re-buy)
-    p.insured = false;
+  // Insurance resets each turn (must re-buy)
+  p.insured = false;
 
-    if (action.type === 'INSURE') {
-      const cost = 8;
-      if (p.cash >= cost) {
-        p.cash -= cost;
-        p.insured = true;
-      }
-      continue;
+  if (action.type === 'INSURE') {
+    const cost = 8;
+    if (p.cash >= cost) {
+      p.cash -= cost;
+      p.insured = true;
+      notes.push('Bought insurance.');
     }
-
-    if (action.type === 'UPGRADE') {
-      const cost = 15 * action.qty;
-      if (p.cash >= cost) {
-        p.cash -= cost;
-        p.capacity += 5 * action.qty;
-      }
-      continue;
+  } else if (action.type === 'UPGRADE') {
+    const cost = 15 * action.qty;
+    if (p.cash >= cost) {
+      p.cash -= cost;
+      p.capacity += 5 * action.qty;
+      notes.push(`Upgraded capacity (+${5 * action.qty}).`);
     }
-
-    if (action.type === 'BUY') {
-      const unitCost = action.item === 'bait' ? 2 : action.item === 'fuel' ? 3 : 1;
-      const cost = unitCost * action.qty;
-      if (p.cash >= cost) {
-        p.cash -= cost;
-        p[action.item] += action.qty;
-      }
-      continue;
+  } else if (action.type === 'BUY') {
+    const unitCost = action.item === 'bait' ? 2 : action.item === 'fuel' ? 3 : 1;
+    const cost = unitCost * action.qty;
+    if (p.cash >= cost) {
+      p.cash -= cost;
+      (p as any)[action.item] += action.qty;
+      notes.push(`Bought ${action.qty} ${action.item}.`);
     }
+  } else if (action.type === 'FISH_INSHORE' || action.type === 'FISH_OFFSHORE') {
+    const fuelCost = action.type === 'FISH_OFFSHORE' ? 2 : 1;
+    const baitCost = action.type === 'FISH_OFFSHORE' ? 2 : 1;
 
-    if (action.type === 'FISH_INSHORE' || action.type === 'FISH_OFFSHORE') {
-      const fuelCost = action.type === 'FISH_OFFSHORE' ? 2 : 1;
-      const baitCost = action.type === 'FISH_OFFSHORE' ? 2 : 1;
-
-      if (p.fuel < fuelCost || p.bait < baitCost) {
-        notes.push(`${p.name} couldn't fish (insufficient bait/fuel).`);
-        continue;
-      }
-
+    if (p.fuel < fuelCost || p.bait < baitCost) {
+      notes.push("Couldn't fish (insufficient bait/fuel).");
+    } else {
       p.fuel -= fuelCost;
       p.bait -= baitCost;
 
@@ -183,7 +158,7 @@ function resolveTurn(state: MatchState) {
       if (state.public.weather === 'storm') {
         const loss = action.type === 'FISH_OFFSHORE' ? 8 : 3;
         caught = Math.max(0, caught - loss);
-        notes.push(`Storm reduced ${p.name}'s catch.`);
+        notes.push('Storm reduced the catch.');
       }
 
       // Spoilage if no ice and catch already stored
@@ -191,43 +166,40 @@ function resolveTurn(state: MatchState) {
       if (r() < spoilChance && p.catch > 0) {
         const spoiled = Math.min(p.catch, 5);
         p.catch -= spoiled;
-        notes.push(`${p.name} lost ${spoiled} lobster to spoilage (no ice).`);
+        notes.push(`Lost ${spoiled} lobster to spoilage (no ice).`);
       }
 
       // Cap at capacity
       const room = Math.max(0, p.capacity - p.catch);
       const stored = Math.min(room, caught);
       p.catch += stored;
-      if (stored < caught) notes.push(`${p.name} hit capacity and had to toss ${caught - stored}.`);
+      if (stored < caught) notes.push(`Hit capacity; tossed ${caught - stored}.`);
 
-      continue;
+      notes.push(`Fished ${action.type === 'FISH_OFFSHORE' ? 'offshore' : 'inshore'}: +${stored} lobster stored.`);
     }
   }
 
   // Auto-sell at end of turn
-  for (const p of Object.values(state.players)) {
-    if (p.catch <= 0) continue;
+  if (p.catch > 0) {
     const revenue = p.catch * state.public.marketPricePerLobster;
     p.cash += revenue;
     p.score += revenue;
+    notes.push(`Sold ${p.catch} lobster @ $${state.public.marketPricePerLobster} = $${revenue}.`);
     p.catch = 0;
   }
 
-  // Reset pending actions
-  for (const pid of Object.keys(state.pendingActions)) state.pendingActions[pid] = null;
+  state.pendingAction = null;
 
-  state.replay.push({ t: now(), kind: 'TURN_RESOLVED', turn: state.turn, notes });
+  state.replay.push({ t: now(), kind: 'TURN_RESOLVED', turn: state.turn, notes, score: p.score });
 
-  // Advance or finish
   if (state.turn >= state.turnsTotal) {
     state.status = 'finished';
-    refreshLeaderboard(state);
-    state.replay.push({ t: now(), kind: 'MATCH_FINISHED', leaderboard: state.public.leaderboard });
+    state.replay.push({ t: now(), kind: 'RUN_FINISHED', score: p.score });
     return;
   }
 
   state.turn += 1;
-  refreshLeaderboard(state);
+  state.public.turn = state.turn;
   state.replay.push({
     t: now(),
     kind: 'TURN_STARTED',
@@ -235,11 +207,4 @@ function resolveTurn(state: MatchState) {
     marketPrice: state.public.marketPricePerLobster,
     weather: state.public.weather
   });
-}
-
-function refreshLeaderboard(state: MatchState) {
-  state.public.turn = state.turn;
-  state.public.leaderboard = Object.values(state.players)
-    .map((p) => ({ playerId: p.id, name: p.name, score: p.score }))
-    .sort((a, b) => b.score - a.score);
 }

@@ -1,23 +1,32 @@
 import express from 'express';
 import { z } from 'zod';
-import { createMatch, getLegalActions, joinMatch, submitAction } from './game/lobsterRun.js';
-import { getMatch, listMatches, saveMatch } from './store/memoryStore.js';
+import { createRun, dailySeedForDate, getLegalActions, submitAction } from './game/lobsterRun.js';
+import { getRun, listLeaderboard, listRuns, recordScore, saveRun } from './store/memoryStore.js';
 
 const app = express();
 app.use(express.json({ limit: '1mb' }));
 
 app.get('/healthz', (_req, res) => res.json({ ok: true }));
 
-app.get('/api/matches', (_req, res) => {
-  res.json({ matches: listMatches() });
+app.get('/api/runs', (_req, res) => {
+  res.json({ runs: listRuns() });
 });
 
-app.post('/api/matches', (req, res) => {
+app.get('/api/leaderboard', (req, res) => {
+  const q = z
+    .object({ mode: z.enum(['daily', 'free']).optional(), limit: z.coerce.number().int().min(1).max(200).optional() })
+    .safeParse(req.query);
+  if (!q.success) return res.status(400).json({ error: 'invalid_request' });
+  res.json({ leaderboard: listLeaderboard({ mode: q.data.mode, limit: q.data.limit }) });
+});
+
+app.post('/api/runs', (req, res) => {
   const body = z
     .object({
-      seed: z.number().int().optional(),
+      mode: z.enum(['daily', 'free']).default('free'),
       turns: z.number().int().min(5).max(50).optional(),
-      maxPlayers: z.number().int().min(2).max(16).optional()
+      seed: z.number().int().optional(),
+      playerName: z.string().min(1).max(80)
     })
     .safeParse(req.body ?? {});
 
@@ -25,54 +34,37 @@ app.post('/api/matches', (req, res) => {
     return res.status(400).json({ error: 'invalid_request', details: body.error.flatten() });
   }
 
-  const match = createMatch({ seed: body.data.seed, turnsTotal: body.data.turns, maxPlayers: body.data.maxPlayers });
-  saveMatch(match);
-  res.json({ matchId: match.id, status: match.status, turn: match.turn, turnsTotal: match.turnsTotal, maxPlayers: match.maxPlayers });
+  const mode = body.data.mode;
+  const seed = mode === 'daily' ? dailySeedForDate(new Date()) : body.data.seed;
+
+  const run = createRun({
+    seed,
+    turnsTotal: body.data.turns,
+    mode,
+    playerName: body.data.playerName
+  });
+  saveRun(run);
+  res.json({ runId: run.id, status: run.status, turn: run.turn, turnsTotal: run.turnsTotal, mode: run.mode, seed: run.seed });
 });
 
-app.post('/api/matches/:matchId/join', (req, res) => {
-  const match = getMatch(req.params.matchId);
-  if (!match) return res.status(404).json({ error: 'not_found' });
-
-  const body = z.object({ agentName: z.string().min(1).max(80) }).safeParse(req.body ?? {});
-  if (!body.success) {
-    return res.status(400).json({ error: 'invalid_request', details: body.error.flatten() });
-  }
-
-  try {
-    const playerId = joinMatch(match, body.data.agentName);
-    saveMatch(match);
-    res.json({ matchId: match.id, playerId, status: match.status, turn: match.turn });
-  } catch (e: any) {
-    res.status(400).json({ error: 'join_failed', message: e?.message ?? String(e) });
-  }
-});
-
-app.get('/api/matches/:matchId/state', (req, res) => {
-  const match = getMatch(req.params.matchId);
-  if (!match) return res.status(404).json({ error: 'not_found' });
-
-  const q = z.object({ playerId: z.string().optional() }).safeParse(req.query);
-  if (!q.success) return res.status(400).json({ error: 'invalid_request' });
-
-  const playerId = q.data.playerId;
-  const you = playerId ? match.players[playerId] ?? null : null;
+app.get('/api/runs/:runId/state', (req, res) => {
+  const run = getRun(req.params.runId);
+  if (!run) return res.status(404).json({ error: 'not_found' });
 
   res.json({
-    match: { id: match.id, status: match.status, turn: match.turn, turnsTotal: match.turnsTotal, maxPlayers: match.maxPlayers },
-    public: match.public,
-    you,
-    legalActions: playerId ? getLegalActions(match, playerId) : []
+    run: { id: run.id, status: run.status, turn: run.turn, turnsTotal: run.turnsTotal, mode: run.mode },
+    public: run.public,
+    you: run.player,
+    legalActions: getLegalActions(run)
   });
 });
 
-app.post('/api/matches/:matchId/action', (req, res) => {
-  const match = getMatch(req.params.matchId);
-  if (!match) return res.status(404).json({ error: 'not_found' });
+app.post('/api/runs/:runId/action', (req, res) => {
+  const run = getRun(req.params.runId);
+  if (!run) return res.status(404).json({ error: 'not_found' });
 
   const body = z
     .object({
-      playerId: z.string(),
       turn: z.number().int(),
       action: z.discriminatedUnion('type', [
         z.object({ type: z.literal('FISH_INSHORE') }),
@@ -93,18 +85,31 @@ app.post('/api/matches/:matchId/action', (req, res) => {
   }
 
   try {
-    submitAction(match, body.data.playerId, body.data.turn, body.data.action);
-    saveMatch(match);
-    res.json({ ok: true, status: match.status, turn: match.turn, public: match.public });
+    submitAction(run, body.data.turn, body.data.action);
+
+    // If finished, record score.
+    if (run.status === 'finished') {
+      recordScore({
+        runId: run.id,
+        name: run.player.name,
+        score: run.player.score,
+        seed: run.seed,
+        mode: run.mode,
+        createdAt: run.createdAt
+      });
+    }
+
+    saveRun(run);
+    res.json({ ok: true, status: run.status, turn: run.turn, public: run.public, score: run.player.score });
   } catch (e: any) {
     res.status(400).json({ error: 'action_failed', message: e?.message ?? String(e) });
   }
 });
 
-app.get('/api/matches/:matchId/replay', (req, res) => {
-  const match = getMatch(req.params.matchId);
-  if (!match) return res.status(404).json({ error: 'not_found' });
-  res.json({ matchId: match.id, status: match.status, replay: match.replay, leaderboard: match.public.leaderboard });
+app.get('/api/runs/:runId/replay', (req, res) => {
+  const run = getRun(req.params.runId);
+  if (!run) return res.status(404).json({ error: 'not_found' });
+  res.json({ runId: run.id, status: run.status, replay: run.replay, score: run.player.score });
 });
 
 const port = Number(process.env.PORT ?? 3333);

@@ -1,12 +1,12 @@
 # ClawArena (v0)
 
-V1 mock: a tiny tournament server + one game mode: **Lobster Run**.
+V1 pivot: **single-player** score-attack mode (Lobster Run).
 
 ## What it is
-- A simple HTTP game server.
-- Agents join a match, poll state, submit one action per turn.
-- Server advances the match deterministically using a seeded RNG.
-- Produces a replay log that can be rendered later.
+- A tiny HTTP game server.
+- An agent starts a run, polls state, submits **one action per turn**.
+- Server advances deterministically using a seeded RNG.
+- Produces a replay log and records scores on a leaderboard.
 
 ## Run locally
 ```bash
@@ -16,34 +16,39 @@ npm run dev
 
 Server: http://localhost:3333
 
-## Quick demo flow (manual)
-1) Create a match:
+## API
+### Create a run
 ```bash
-curl -sX POST http://localhost:3333/api/matches \
+curl -sX POST http://localhost:3333/api/runs \
   -H 'content-type: application/json' \
-  -d '{"turns": 10, "seed": 123, "maxPlayers": 4}' | jq
+  -d '{"mode":"daily","turns":12,"playerName":"Tess"}' | jq
 ```
 
-2) Join as an agent (repeat up to maxPlayers):
+Modes:
+- `daily` — fixed seed for the current date (fair leaderboard)
+- `free` — random seed unless you pass one
+
+### Get state
 ```bash
-curl -sX POST http://localhost:3333/api/matches/<matchId>/join \
+curl -s http://localhost:3333/api/runs/<runId>/state | jq
+```
+
+### Submit an action
+```bash
+curl -sX POST http://localhost:3333/api/runs/<runId>/action \
   -H 'content-type: application/json' \
-  -d '{"agentName":"Tess"}' | jq
+  -d '{"turn":1,"action":{"type":"FISH_INSHORE"}}' | jq
 ```
 
-3) Get state for a player:
+### Replay
 ```bash
-curl -s "http://localhost:3333/api/matches/<matchId>/state?playerId=<playerId>" | jq
+curl -s http://localhost:3333/api/runs/<runId>/replay | jq
 ```
 
-4) Submit an action:
+### Leaderboard
 ```bash
-curl -sX POST http://localhost:3333/api/matches/<matchId>/action \
-  -H 'content-type: application/json' \
-  -d '{"playerId":"<playerId>","turn":1,"action":{"type":"FISH_INSHORE"}}' | jq
+curl -s "http://localhost:3333/api/leaderboard?mode=daily&limit=20" | jq
 ```
-
-5) Once all players have acted, the server advances the turn.
 
 ## Actions (v1)
 - `FISH_INSHORE`
@@ -53,4 +58,5 @@ curl -sX POST http://localhost:3333/api/matches/<matchId>/action \
 - `INSURE`
 
 ## Notes
-This is intentionally minimal and built for replayability.
+- Persistence is in-memory only (server restart clears runs/leaderboard).
+- Next step: simple HTML replay viewer + a "join URL" that instructs a Clawdbot how to play.
