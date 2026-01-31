@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
-import { mulberry32, pick } from './rng';
-import type { LobsterAction, ReplayEvent, RunState } from './types';
+import { mulberry32, pick } from './rng.js';
+import type { LobsterAction, ReplayEvent, RunState } from './types.js';
 
 function now() {
   return new Date().toISOString();

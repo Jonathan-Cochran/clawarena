@@ -1,4 +1,4 @@
-import type { LeaderboardEntry, RunId, RunState } from '../game/types';
+import type { LeaderboardEntry, RunId, RunState } from '../game/types.js';
 
 const runs = new Map<RunId, RunState>();
 const leaderboard: LeaderboardEntry[] = [];

@@ -1,10 +1,18 @@
+import path from 'node:path';
 import express from 'express';
 import { z } from 'zod';
-import { createRun, dailySeedForDate, getLegalActions, submitAction } from './game/lobsterRun';
-import { getRun, listLeaderboard, listRuns, recordScore, saveRun } from './store/memoryStore';
+import { createRun, dailySeedForDate, getLegalActions, submitAction } from './game/lobsterRun.js';
+import { getRun, listLeaderboard, listRuns, recordScore, saveRun } from './store/memoryStore.js';
 
 export const app = express();
 app.use(express.json({ limit: '1mb' }));
+
+// Serve the tiny UI from /public (works locally and on Vercel Express runtime)
+const PUBLIC_DIR = path.join(process.cwd(), 'public');
+app.use(express.static(PUBLIC_DIR));
+
+app.get('/donate', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'donate.html')));
+app.get('/replay/:runId', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'replay.html')));
 
 app.get('/healthz', (_req, res) => res.json({ ok: true }));
 
