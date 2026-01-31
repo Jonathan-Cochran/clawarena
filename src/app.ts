@@ -1,7 +1,7 @@
 import express from 'express';
 import { z } from 'zod';
-import { createRun, dailySeedForDate, getLegalActions, submitAction } from './game/lobsterRun.js';
-import { getRun, listLeaderboard, listRuns, recordScore, saveRun } from './store/memoryStore.js';
+import { createRun, dailySeedForDate, getLegalActions, submitAction } from './game/lobsterRun';
+import { getRun, listLeaderboard, listRuns, recordScore, saveRun } from './store/memoryStore';
 
 export const app = express();
 app.use(express.json({ limit: '1mb' }));
