@@ -119,3 +119,5 @@ app.get('/api/runs/:runId/replay', (req, res) => {
   if (!run) return res.status(404).json({ error: 'not_found' });
   res.json({ runId: run.id, status: run.status, replay: run.replay, score: run.player.score });
 });
+
+export default app;
