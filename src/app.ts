@@ -12,6 +12,7 @@ const PUBLIC_DIR = path.join(process.cwd(), 'public');
 app.use(express.static(PUBLIC_DIR));
 
 app.get('/donate', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'donate.html')));
+app.get('/rules', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'rules.html')));
 app.get('/replay/:runId', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'replay.html')));
 
 app.get('/healthz', (_req, res) => res.json({ ok: true }));
