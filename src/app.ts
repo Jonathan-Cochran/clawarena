@@ -35,6 +35,8 @@ app.use(express.static(PUBLIC_DIR));
 app.get('/donate', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'donate.html')));
 app.get('/thanks', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'thanks.html')));
 app.get('/about', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'about.html')));
+app.get('/bot', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'bot.html')));
+app.get('/terms', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'terms.html')));
 
 // Multi-game routes
 app.get('/games', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'games.html')));
