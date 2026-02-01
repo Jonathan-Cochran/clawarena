@@ -16,7 +16,10 @@ if (!connectionString) {
 export const pool = new pg.Pool({
   connectionString: connectionString ?? undefined,
   // In most managed Postgres environments, TLS is required.
-  ssl: { rejectUnauthorized: false }
+  ssl: { rejectUnauthorized: false },
+  max: 5,
+  connectionTimeoutMillis: 4000,
+  idleTimeoutMillis: 10000
 });
 
 export async function sql<T extends pg.QueryResultRow = any>(text: string, params?: any[]): Promise<pg.QueryResult<T>> {
