@@ -207,42 +207,10 @@ app.post(`${V1}/runs`, a(async (req: express.Request, res: express.Response) => 
   return res.json({ runId: run.id, status: run.status, turn: run.turn, turnsTotal: run.turnsTotal, mode: run.mode, seed: run.seed });
 }));
 
-// Legacy v0 endpoint (no auth; used by the UI quick play)
-app.post('/api/runs', a(async (req: express.Request, res: express.Response) => {
-  const body = z
-    .object({
-      mode: z.enum(['daily', 'free']).default('free'),
-      turns: z.number().int().min(5).max(50).optional(),
-      seed: z.number().int().optional(),
-      playerName: z.string().min(1).max(80)
-    })
-    .safeParse(req.body ?? {});
-
-  if (!body.success) {
-    return res.status(400).json({ error: 'invalid_request', details: body.error.flatten() });
-  }
-
-  const mode = body.data.mode;
-  const seed = mode === 'daily' ? dailySeedForDate(new Date()) : body.data.seed;
-
-  // Legacy/UI mode: create an auto-claimed agent for this name.
-  // This is a temporary bridge until the UI supports the v1 agent claim flow.
-  const agent = await registerAgent({ name: body.data.playerName, description: 'ui quick-play' });
-  // Force-claim for UI bots.
-  await claimAgent(agent.claimToken, agent.verificationCode);
-
-  const run = createRun({
-    seed,
-    turnsTotal: body.data.turns,
-    mode,
-    playerName: body.data.playerName
-  });
-
-  await saveRun(run, agent.id);
-  activeRuns.set(run.id, { run, agentId: agent.id, claimed: true });
-
-  res.json({ runId: run.id, status: run.status, turn: run.turn, turnsTotal: run.turnsTotal, mode: run.mode, seed: run.seed });
-}));
+// Quick-play disabled (agents only). Leave endpoint as a hard fail to avoid DB spam.
+app.post('/api/runs', (_req, res) => {
+  res.status(410).json({ error: 'quick_play_disabled', message: 'Agents only. Use /api/v1/* with an API key.' });
+});
 
 app.get(`${V1}/runs/:runId/state`, a(async (req: express.Request, res: express.Response) => {
   const key = requireApiKey(req);
@@ -262,19 +230,7 @@ app.get(`${V1}/runs/:runId/state`, a(async (req: express.Request, res: express.R
   });
 }));
 
-// Legacy v0 endpoint (UI)
-app.get('/api/runs/:runId/state', (req, res) => {
-  const active = activeRuns.get(req.params.runId);
-  if (!active) return res.status(404).json({ error: 'not_found' });
-  const run = active.run;
-
-  res.json({
-    run: { id: run.id, status: run.status, turn: run.turn, turnsTotal: run.turnsTotal, mode: run.mode },
-    public: run.public,
-    you: run.player,
-    legalActions: getLegalActions(run)
-  });
-});
+// Legacy UI state endpoint removed (agents only)
 
 app.post(`${V1}/runs/:runId/action`, a(async (req: express.Request, res: express.Response) => {
   const key = requireApiKey(req);
@@ -341,60 +297,7 @@ app.post(`${V1}/runs/:runId/action`, a(async (req: express.Request, res: express
   }
 }));
 
-// Legacy v0 endpoint (UI)
-app.post('/api/runs/:runId/action', a(async (req: express.Request, res: express.Response) => {
-  const active = activeRuns.get(req.params.runId);
-  if (!active) return res.status(404).json({ error: 'not_found' });
-  const run = active.run;
-
-  const body = z
-    .object({
-      turn: z.number().int(),
-      action: z.discriminatedUnion('type', [
-        z.object({ type: z.literal('FISH_INSHORE') }),
-        z.object({ type: z.literal('FISH_OFFSHORE') }),
-        z.object({ type: z.literal('INSURE') }),
-        z.object({ type: z.literal('UPGRADE'), qty: z.number().int().min(1).max(10) }),
-        z.object({
-          type: z.literal('BUY'),
-          item: z.enum(['bait', 'fuel', 'ice']),
-          qty: z.number().int().min(1).max(25)
-        })
-      ])
-    })
-    .safeParse(req.body ?? {});
-
-  if (!body.success) {
-    return res.status(400).json({ error: 'invalid_request', details: body.error.flatten() });
-  }
-
-  try {
-    submitAction(run, body.data.turn, body.data.action);
-
-    // Legacy UI: always persists + records score.
-    if (run.status === 'finished') {
-      await saveRun(run, active.agentId);
-      await recordScore(
-        {
-          runId: run.id,
-          name: run.player.name,
-          score: run.player.score,
-          seed: run.seed,
-          mode: run.mode,
-          createdAt: run.createdAt
-        },
-        active.agentId
-      );
-      activeRuns.delete(run.id);
-    } else {
-      await saveRun(run, active.agentId);
-    }
-
-    res.json({ ok: true, status: run.status, turn: run.turn, public: run.public, score: run.player.score });
-  } catch (e: any) {
-    res.status(400).json({ error: 'action_failed', message: e?.message ?? String(e) });
-  }
-}));
+// Legacy UI action endpoint removed (agents only)
 
 app.get('/api/runs/:runId/replay', a(async (req: express.Request, res: express.Response) => {
   const active = activeRuns.get(req.params.runId);

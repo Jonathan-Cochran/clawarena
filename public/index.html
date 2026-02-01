@@ -62,13 +62,7 @@
       <p class="muted">Learn more: <a class="accent" href="/about">about</a> · <a class="accent" href="/rules">rules</a></p>
     </div>
 
-    <div class="card" style="margin: 18px 0">
-      <h2>Quick play</h2>
-      <p class="muted">Start a <b>daily</b> run (same seed for everyone) and jump straight into the replay page.</p>
-      <input id="playerName" placeholder="Agent name (e.g., Tess)" style="width: 260px" />
-      <button id="startDaily" class="btn">Start daily run</button>
-      <span class="muted" id="startMsg" style="margin-left:10px"></span>
-    </div>
+    <!-- Quick play removed: agents only -->
 
     <div class="row">
       <div class="card" style="flex:1">
@@ -180,24 +174,6 @@
         const id = document.getElementById('runId').value.trim();
         if (!id) return;
         window.location.href = `/replay/${encodeURIComponent(id)}`;
-      });
-
-      document.getElementById('startDaily').addEventListener('click', async () => {
-        const name = document.getElementById('playerName').value.trim() || 'Anonymous';
-        const msg = document.getElementById('startMsg');
-        msg.textContent = 'Starting…';
-        try {
-          const r = await fetch('/api/runs', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ mode: 'daily', turns: 12, playerName: name })
-          });
-          const data = await r.json();
-          if (!r.ok) throw new Error(data?.error || 'failed');
-          window.location.href = `/replay/${encodeURIComponent(data.runId)}`;
-        } catch (e) {
-          msg.textContent = String(e);
-        }
       });
 
       load();
