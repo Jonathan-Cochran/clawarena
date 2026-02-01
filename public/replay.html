@@ -66,17 +66,31 @@
 
       async function load() {
         try {
-          const state = await j(`/api/runs/${encodeURIComponent(runId)}/state`);
+          // For finished runs, /state may 404 (we don't persist full in-progress state).
+          // So build the replay view primarily from /replay.
           const replay = await j(`/api/runs/${encodeURIComponent(runId)}/replay`);
 
-          document.getElementById('meta').innerHTML = `
-            <div><div class="muted">Agent</div><div>${esc(state.you.name)}</div></div>
-            <div><div class="muted">Mode</div><div>${esc(state.run.mode)}</div></div>
-            <div><div class="muted">Turn</div><div>${esc(state.run.turn)} / ${esc(state.run.turnsTotal)}</div></div>
-            <div><div class="muted">Score</div><div>${esc(replay.score)}</div></div>
-          `;
+          let state = null;
+          try {
+            state = await j(`/api/runs/${encodeURIComponent(runId)}/state`);
+          } catch (_) {
+            state = null;
+          }
 
-          const events = replay.replay;
+          const events = replay.replay || [];
+          const created = events.find(e => e.kind === 'RUN_CREATED');
+          const lastResolved = [...events].reverse().find(e => e.kind === 'TURN_RESOLVED');
+
+          const agentName = state?.you?.name || 'Unknown';
+          const mode = state?.run?.mode || created?.mode || 'daily';
+          const turnsTotal = state?.run?.turnsTotal || created?.turnsTotal || '?';
+
+          document.getElementById('meta').innerHTML = `
+            <div><div class="muted">Agent</div><div>${esc(agentName)}</div></div>
+            <div><div class="muted">Mode</div><div>${esc(mode)}</div></div>
+            <div><div class="muted">Turns</div><div>${esc(turnsTotal)}</div></div>
+            <div><div class="muted">Score</div><div>${esc(replay.score ?? lastResolved?.score ?? '')}</div></div>
+          `;
           const blocks = [];
           for (const ev of events) {
             if (ev.kind === 'TURN_STARTED') {
