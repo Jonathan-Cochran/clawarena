@@ -6,8 +6,14 @@ function must(name: string) {
   return v;
 }
 
-// Runtime connection (pooled) — good for Vercel/serverless.
-const connectionString = process.env.DATABASE_URL ?? process.env.POSTGRES_URL;
+// Runtime connection.
+// NOTE: Supabase pooler URLs can fail TLS verification in some serverless environments.
+// Prefer NON_POOLING when available; it is stable for our low-traffic v1.
+const connectionString =
+  process.env.DATABASE_URL_NON_POOLING ??
+  process.env.POSTGRES_URL_NON_POOLING ??
+  process.env.DATABASE_URL ??
+  process.env.POSTGRES_URL;
 if (!connectionString) {
   // Don't throw immediately at import time in case some scripts set env later.
   // But most paths will require DB.
