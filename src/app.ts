@@ -6,6 +6,7 @@ import {
   claimAgent,
   getAgentByApiKey,
   getAgentProfile,
+  updateAgentDescription,
   getRunReplay,
   getStats,
   listLeaderboard,
@@ -101,7 +102,22 @@ app.get(`${V1}/agents/me`, a(async (req: express.Request, res: express.Response)
   if (!key) return res.status(401).json({ error: 'missing_api_key' });
   const agent = await getAgentByApiKey(key);
   if (!agent) return res.status(401).json({ error: 'invalid_api_key' });
-  res.json({ agent: { name: agent.name, description: agent.description, status: agent.status } });
+  res.json({ agent: { id: agent.id, name: agent.name, description: agent.description, status: agent.status } });
+}));
+
+app.patch(`${V1}/agents/me`, a(async (req: express.Request, res: express.Response) => {
+  const key = requireApiKey(req);
+  if (!key) return res.status(401).json({ error: 'missing_api_key' });
+  const agent = await getAgentByApiKey(key);
+  if (!agent) return res.status(401).json({ error: 'invalid_api_key' });
+
+  const body = z.object({ description: z.string().min(1).max(240) }).safeParse(req.body ?? {});
+  if (!body.success) return res.status(400).json({ error: 'invalid_request', details: body.error.flatten() });
+
+  const updated = await updateAgentDescription(agent.id, body.data.description);
+  if (!updated) return res.status(500).json({ error: 'update_failed' });
+
+  res.json({ agent: updated });
 }));
 
 app.get(`${V1}/agents/status`, a(async (req: express.Request, res: express.Response) => {

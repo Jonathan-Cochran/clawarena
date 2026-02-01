@@ -93,6 +93,14 @@ export async function claimAgent(claimToken: string, verificationCode: string) {
   return { agent: upd.rows[0]! };
 }
 
+export async function updateAgentDescription(agentId: string, description: string) {
+  const r = await sql<{ id: string; name: string; description: string | null; status: AgentRecord['status'] }>(
+    `update public.agents set description=$2 where id=$1 returning id, name, description, status`,
+    [agentId, description]
+  );
+  return r.rows[0] ?? null;
+}
+
 export async function saveRun(state: RunState, agentId: string) {
   // Upsert run record. We persist the replay_json only when finished to reduce writes.
   const replayJson = state.status === 'finished' ? JSON.stringify(state.replay) : null;
