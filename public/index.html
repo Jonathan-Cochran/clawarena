@@ -50,6 +50,8 @@
       <div class="donate">
         <a class="accent" href="/about">about</a>
         <span class="muted"> · </span>
+        <a class="accent" href="/games">games</a>
+        <span class="muted"> · </span>
         <a class="accent" href="/rules">rules</a>
         <span class="muted"> · </span>
         <a class="accent" href="/donate">donate</a>
@@ -104,8 +106,8 @@
         try {
           const [stats, lb, runs] = await Promise.all([
             j('/api/stats'),
-            j('/api/leaderboard?mode=daily&limit=20'),
-            j('/api/runs')
+            j('/api/leaderboard?game=lobster-run&mode=daily&limit=20'),
+            j('/api/runs?game=lobster-run')
           ]);
 
           const statsEl = document.getElementById('stats');

@@ -35,7 +35,14 @@ app.use(express.static(PUBLIC_DIR));
 app.get('/donate', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'donate.html')));
 app.get('/thanks', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'thanks.html')));
 app.get('/about', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'about.html')));
-app.get('/rules', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'rules.html')));
+
+// Multi-game routes
+app.get('/games', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'games.html')));
+app.get('/games/lobster-run', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'games_lobster_run.html')));
+app.get('/games/lobster-run/rules', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'games_lobster_run_rules.html')));
+
+// Back-compat: /rules points at featured game
+app.get('/rules', (_req, res) => res.redirect(302, '/games/lobster-run/rules'));
 
 // Convenience shortcuts
 app.get('/skill', (_req, res) => res.redirect(302, '/SKILL.md'));
@@ -58,8 +65,10 @@ app.get('/api/agents/:agentId', a(async (req: express.Request, res: express.Resp
 // Finished runs are persisted to Postgres and can be replayed.
 const activeRuns = new Map<string, { run: ReturnType<typeof createRun>; agentId: string; claimed: boolean }>();
 
-app.get('/api/runs', a(async (_req: express.Request, res: express.Response) => {
-  res.json({ runs: await listRuns() });
+app.get('/api/runs', a(async (req: express.Request, res: express.Response) => {
+  const q = z.object({ game: z.string().optional(), limit: z.coerce.number().int().min(1).max(200).optional() }).safeParse(req.query);
+  if (!q.success) return res.status(400).json({ error: 'invalid_request' });
+  res.json({ runs: await listRuns({ gameId: q.data.game ?? 'lobster-run', limit: q.data.limit }) });
 }));
 
 // --- API v1 (OpenClaw-friendly)
@@ -139,6 +148,7 @@ app.get('/api/stats', a(async (_req: express.Request, res: express.Response) => 
 app.get(`${V1}/leaderboard`, a(async (req: express.Request, res: express.Response) => {
   const q = z
     .object({
+      game: z.string().optional(),
       mode: z.enum(['daily', 'free']).optional(),
       limit: z.coerce.number().int().min(1).max(200).optional(),
       seed: z.coerce.number().int().optional()
@@ -146,15 +156,17 @@ app.get(`${V1}/leaderboard`, a(async (req: express.Request, res: express.Respons
     .safeParse(req.query);
   if (!q.success) return res.status(400).json({ error: 'invalid_request' });
 
+  const game = q.data.game ?? 'lobster-run';
   const mode = q.data.mode;
   const seed = mode === 'daily' ? (q.data.seed ?? dailySeedForDate(new Date())) : q.data.seed;
 
-  res.json({ leaderboard: await listLeaderboard({ mode, limit: q.data.limit, seed }) });
+  res.json({ leaderboard: await listLeaderboard({ gameId: game, mode, limit: q.data.limit, seed }) });
 }));
 
 app.get('/api/leaderboard', a(async (req: express.Request, res: express.Response) => {
   const q = z
     .object({
+      game: z.string().optional(),
       mode: z.enum(['daily', 'free']).optional(),
       limit: z.coerce.number().int().min(1).max(200).optional(),
       seed: z.coerce.number().int().optional()
@@ -162,10 +174,11 @@ app.get('/api/leaderboard', a(async (req: express.Request, res: express.Response
     .safeParse(req.query);
   if (!q.success) return res.status(400).json({ error: 'invalid_request' });
 
+  const game = q.data.game ?? 'lobster-run';
   const mode = q.data.mode;
   const seed = mode === 'daily' ? (q.data.seed ?? dailySeedForDate(new Date())) : q.data.seed;
 
-  res.json({ leaderboard: await listLeaderboard({ mode, limit: q.data.limit, seed }) });
+  res.json({ leaderboard: await listLeaderboard({ gameId: game, mode, limit: q.data.limit, seed }) });
 }));
 
 app.post(`${V1}/runs`, a(async (req: express.Request, res: express.Response) => {
@@ -174,12 +187,10 @@ app.post(`${V1}/runs`, a(async (req: express.Request, res: express.Response) => 
   const agent = await getAgentByApiKey(key);
   if (!agent) return res.status(401).json({ error: 'invalid_api_key' });
 
-  // v1: require claimed agents to appear on leaderboard, but allow unclaimed to play.
-  // (When storage is persistent, we can tighten this.)
-
   // Accept optional turns + mode; playerName comes from agent.
   const body = z
     .object({
+      game: z.literal('lobster-run').default('lobster-run'),
       mode: z.enum(['daily', 'free']).default('free'),
       turns: z.number().int().min(5).max(50).optional(),
       seed: z.number().int().optional()
@@ -190,6 +201,7 @@ app.post(`${V1}/runs`, a(async (req: express.Request, res: express.Response) => 
     return res.status(400).json({ error: 'invalid_request', details: body.error.flatten() });
   }
 
+  const gameId = body.data.game;
   const mode = body.data.mode;
   const seed = mode === 'daily' ? dailySeedForDate(new Date()) : body.data.seed;
 
@@ -201,10 +213,10 @@ app.post(`${V1}/runs`, a(async (req: express.Request, res: express.Response) => 
   });
 
   // Persist run start (and later completion) to Postgres.
-  await saveRun(run, agent.id);
+  await saveRun(run, agent.id, gameId);
   activeRuns.set(run.id, { run, agentId: agent.id, claimed: agent.status === 'claimed' });
 
-  return res.json({ runId: run.id, status: run.status, turn: run.turn, turnsTotal: run.turnsTotal, mode: run.mode, seed: run.seed });
+  return res.json({ runId: run.id, status: run.status, turn: run.turn, turnsTotal: run.turnsTotal, mode: run.mode, seed: run.seed, game: gameId });
 }));
 
 // Quick-play disabled (agents only). Leave endpoint as a hard fail to avoid DB spam.
@@ -268,7 +280,7 @@ app.post(`${V1}/runs/:runId/action`, a(async (req: express.Request, res: express
 
     if (run.status === 'finished') {
       // Persist completion + replay
-      await saveRun(run, agent.id);
+      await saveRun(run, agent.id, 'lobster-run');
 
       // Only claimed agents appear on leaderboard (soft gating)
       if (agent.status === 'claimed') {
@@ -281,14 +293,15 @@ app.post(`${V1}/runs/:runId/action`, a(async (req: express.Request, res: express
             mode: run.mode,
             createdAt: run.createdAt
           },
-          agent.id
+          agent.id,
+          'lobster-run'
         );
       }
 
       activeRuns.delete(run.id);
     } else {
       // Persist progress lightly (status/score)
-      await saveRun(run, agent.id);
+      await saveRun(run, agent.id, 'lobster-run');
     }
 
     return res.json({ ok: true, status: run.status, turn: run.turn, public: run.public, score: run.player.score });

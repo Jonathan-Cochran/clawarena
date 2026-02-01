@@ -101,20 +101,21 @@ export async function updateAgentDescription(agentId: string, description: strin
   return r.rows[0] ?? null;
 }
 
-export async function saveRun(state: RunState, agentId: string) {
+export async function saveRun(state: RunState, agentId: string, gameId: string) {
   // Upsert run record. We persist the replay_json only when finished to reduce writes.
   const replayJson = state.status === 'finished' ? JSON.stringify(state.replay) : null;
   const finishedAt = state.status === 'finished' ? new Date().toISOString() : null;
 
   await sql(
-    `insert into public.runs (id, agent_id, mode, seed, turns_total, status, score, created_at, finished_at, replay_json)
-     values ($1,$2,$3,$4,$5,$6,$7, now(), $8, $9)
+    `insert into public.runs (id, agent_id, game_id, mode, seed, turns_total, status, score, created_at, finished_at, replay_json)
+     values ($1,$2,$3,$4,$5,$6,$7,$8, now(), $9, $10)
      on conflict (id) do update set
+       game_id = excluded.game_id,
        status = excluded.status,
        score = excluded.score,
        finished_at = coalesce(excluded.finished_at, public.runs.finished_at),
        replay_json = coalesce(excluded.replay_json, public.runs.replay_json)`,
-    [state.id, agentId, state.mode, state.seed, state.turnsTotal, state.status, state.player.score, finishedAt, replayJson]
+    [state.id, agentId, gameId, state.mode, state.seed, state.turnsTotal, state.status, state.player.score, finishedAt, replayJson]
   );
 }
 
@@ -134,26 +135,28 @@ export async function getRunReplay(id: RunId): Promise<{ runId: string; status: 
   return { runId: row.id, status: row.status, score: row.score, replay };
 }
 
-export async function recordScore(entry: LeaderboardEntry, agentId: string) {
+export async function recordScore(entry: LeaderboardEntry, agentId: string, gameId: string) {
   await sql(
-    `insert into public.leaderboard_entries (mode, run_id, agent_id, score, seed)
-     values ($1,$2,$3,$4,$5)`,
-    [entry.mode, entry.runId, agentId, entry.score, entry.seed]
+    `insert into public.leaderboard_entries (game_id, mode, run_id, agent_id, score, seed)
+     values ($1,$2,$3,$4,$5,$6)`,
+    [gameId, entry.mode, entry.runId, agentId, entry.score, entry.seed]
   );
 }
 
 export async function listLeaderboard(filter?: {
+  gameId: string;
   mode?: LeaderboardEntry['mode'];
   limit?: number;
   seed?: number;
 }) {
+  const gameId = filter?.gameId;
   const mode = filter?.mode;
   const limit = filter?.limit ?? 50;
   const seed = filter?.seed;
 
-  // Leaderboard = best score per agent (per mode, optionally per seed)
-  const params: any[] = [];
-  const where: string[] = [];
+  // Leaderboard = best score per agent (per game_id + mode, optionally per seed)
+  const params: any[] = [gameId];
+  const where: string[] = [`l.game_id = $1`];
 
   if (mode) {
     params.push(mode);
@@ -196,19 +199,28 @@ export async function listLeaderboard(filter?: {
     .slice(0, limit);
 }
 
-export async function listRuns(limit = 50) {
-  const r = await sql<{ id: string; status: string; mode: string; turns_total: number; created_at: string; score: number; seed: string; name: string; agent_id: string }>(
-    `select r.id, r.status, r.mode, r.turns_total, r.created_at, r.score, r.seed, r.agent_id, a.name
+export async function listRuns(filter?: { gameId?: string; limit?: number }) {
+  const limit = filter?.limit ?? 50;
+  const gameId = filter?.gameId;
+  const params: any[] = [];
+  const where = gameId ? 'where r.game_id = $1' : '';
+  if (gameId) params.push(gameId);
+
+  const r = await sql<{ id: string; status: string; mode: string; turns_total: number; created_at: string; score: number; seed: string; name: string; agent_id: string; game_id: string }>(
+    `select r.id, r.status, r.mode, r.turns_total, r.created_at, r.score, r.seed, r.agent_id, r.game_id, a.name
      from public.runs r
      join public.agents a on a.id = r.agent_id
+     ${where}
      order by r.created_at desc
-     limit ${limit}`
+     limit ${limit}`,
+    params
   );
 
   return r.rows.map((row: (typeof r.rows)[number]) => ({
     id: row.id,
     status: row.status,
     mode: row.mode,
+    gameId: row.game_id,
     turn: row.turns_total,
     turnsTotal: row.turns_total,
     createdAt: row.created_at,

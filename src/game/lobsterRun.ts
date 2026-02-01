@@ -122,6 +122,8 @@ function resolveTurn(state: RunState) {
     const cost = 8;
     if (p.cash >= cost) {
       p.cash -= cost;
+      // Score = profit ($). Expenses decrease score.
+      p.score -= cost;
       p.insured = true;
       notes.push('Bought insurance.');
     }
@@ -129,6 +131,8 @@ function resolveTurn(state: RunState) {
     const cost = 15 * action.qty;
     if (p.cash >= cost) {
       p.cash -= cost;
+      // Score = profit ($). Expenses decrease score.
+      p.score -= cost;
       p.capacity += 5 * action.qty;
       notes.push(`Upgraded capacity (+${5 * action.qty}).`);
     }
@@ -137,6 +141,8 @@ function resolveTurn(state: RunState) {
     const cost = unitCost * action.qty;
     if (p.cash >= cost) {
       p.cash -= cost;
+      // Score = profit ($). Expenses decrease score.
+      p.score -= cost;
       (p as any)[action.item] += action.qty;
       notes.push(`Bought ${action.qty} ${action.item}.`);
     }
@@ -183,6 +189,7 @@ function resolveTurn(state: RunState) {
   if (p.catch > 0) {
     const revenue = p.catch * state.public.marketPricePerLobster;
     p.cash += revenue;
+    // Score = profit ($). Sales increase score.
     p.score += revenue;
     notes.push(`Sold ${p.catch} lobster @ $${state.public.marketPricePerLobster} = $${revenue}.`);
     p.catch = 0;
