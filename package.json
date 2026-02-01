@@ -7,15 +7,18 @@
     "dev": "tsx watch src/server.ts",
     "start": "node dist/server.js",
     "build": "tsc -p tsconfig.json",
+    "migrate": "tsx scripts/migrate.ts",
     "lint": "eslint ."
   },
   "dependencies": {
     "express": "^4.19.2",
+    "pg": "^8.13.3",
     "zod": "^3.24.1"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",
     "@types/node": "^22.13.0",
+    "@types/pg": "^8.11.11",
     "eslint": "^8.57.1",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3"
