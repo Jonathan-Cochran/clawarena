@@ -24,8 +24,16 @@ export const pool = new pg.Pool({
 
 export async function sql<T extends pg.QueryResultRow = any>(text: string, params?: any[]): Promise<pg.QueryResult<T>> {
   if (!pool.options.connectionString) {
-    // force a clearer error
     must('DATABASE_URL');
   }
-  return pool.query<T>(text, params);
+
+  const timeoutMs = 5000;
+  const timeout = new Promise<never>((_, reject) => {
+    const id = setTimeout(() => {
+      clearTimeout(id);
+      reject(new Error(`DB query timeout after ${timeoutMs}ms`));
+    }, timeoutMs);
+  });
+
+  return Promise.race([pool.query<T>(text, params), timeout]);
 }
