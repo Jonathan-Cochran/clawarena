@@ -33,6 +33,16 @@
       .turn { font-weight: 800; }
       ul { margin: 6px 0 0 18px; }
       .accent { color: var(--accent); text-shadow: 0 0 10px rgba(40,167,69,0.55), 0 0 22px rgba(40,167,69,0.25); }
+      .chips { display:flex; flex-wrap:wrap; gap: 8px; margin-top: 10px; }
+      .chip { display:inline-flex; align-items:baseline; gap: 8px; padding: 6px 10px; border-radius: 999px; border: 1px solid rgba(40,167,69,0.35); background: rgba(40,167,69,0.10); }
+      .chip .k { color: var(--muted); font-weight: 800; font-size: 11px; }
+      .chip .v { color: var(--text); font-weight: 900; font-size: 13px; }
+      .chip .d { color: var(--muted); font-weight: 800; font-size: 11px; }
+      .chip.cash { border-color: rgba(40,167,69,0.55); background: rgba(40,167,69,0.14); }
+      .chip.bait { border-color: rgba(255,193,7,0.55); background: rgba(255,193,7,0.10); }
+      .chip.fuel { border-color: rgba(0,123,255,0.55); background: rgba(0,123,255,0.10); }
+      .chip.ice { border-color: rgba(23,162,184,0.55); background: rgba(23,162,184,0.10); }
+      .chip.cap { border-color: rgba(111,66,193,0.55); background: rgba(111,66,193,0.10); }
     </style>
   </head>
   <body>
@@ -85,6 +95,12 @@
           const created = events.find(e => e.kind === 'RUN_CREATED');
           const lastResolved = [...events].reverse().find(e => e.kind === 'TURN_RESOLVED');
 
+          // For deltas in the UI
+          const snapshots = new Map();
+          for (const ev of events) {
+            if (ev.kind === 'TURN_RESOLVED' && ev.snapshot) snapshots.set(ev.turn, ev.snapshot);
+          }
+
           const agentName = state?.you?.name || 'Unknown';
           const mode = state?.run?.mode || created?.mode || 'daily';
           const turnsTotal = state?.run?.turnsTotal || created?.turnsTotal || '?';
@@ -104,13 +120,26 @@
             } else if (ev.kind === 'TURN_RESOLVED') {
               const notes = (ev.notes || []).map(n => `<li>${esc(n)}</li>`).join('');
               const s = ev.snapshot || {};
-              const snap = `<div class="muted" style="margin-top:10px">
-                <span class="pill">$${esc(s.cash ?? '')}</span>
-                <span class="pill">bait ${esc(s.bait ?? '')}</span>
-                <span class="pill">fuel ${esc(s.fuel ?? '')}</span>
-                <span class="pill">ice ${esc(s.ice ?? '')}</span>
-                <span class="pill">cap ${esc(s.capacity ?? '')}</span>
+              const prev = snapshots.get(ev.turn - 1) || null;
+
+              function delta(key) {
+                const a = prev ? prev[key] : null;
+                const b = s[key];
+                if (a == null || b == null) return '';
+                const d = b - a;
+                if (!d) return '';
+                const sign = d > 0 ? '+' : '';
+                return `${sign}${d}`;
+              }
+
+              const snap = `<div class="chips">
+                <span class="chip cash"><span class="k">$</span><span class="v">${esc(s.cash ?? '')}</span><span class="d">${esc(delta('cash'))}</span></span>
+                <span class="chip bait"><span class="k">bait</span><span class="v">${esc(s.bait ?? '')}</span><span class="d">${esc(delta('bait'))}</span></span>
+                <span class="chip fuel"><span class="k">fuel</span><span class="v">${esc(s.fuel ?? '')}</span><span class="d">${esc(delta('fuel'))}</span></span>
+                <span class="chip ice"><span class="k">ice</span><span class="v">${esc(s.ice ?? '')}</span><span class="d">${esc(delta('ice'))}</span></span>
+                <span class="chip cap"><span class="k">cap</span><span class="v">${esc(s.capacity ?? '')}</span><span class="d">${esc(delta('capacity'))}</span></span>
               </div>`;
+
               blocks.push(`<div style="margin-top:10px"><div class="muted">Result (score: ${esc(ev.score)})</div>${snap}<ul>${notes}</ul></div></div>`);
             } else if (ev.kind === 'RUN_FINISHED') {
               blocks.push(`<div class="card"><div class="turn">Finished</div><div class="muted">Final score: ${esc(ev.score)}</div></div>`);
