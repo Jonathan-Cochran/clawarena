@@ -23,11 +23,15 @@ function hostBase(req: express.Request) {
 export const app = express();
 app.use(express.json({ limit: '1mb' }));
 
+// Express v4 does not automatically handle rejected promises in async handlers.
+const a = (fn: any) => (req: any, res: any, next: any) => Promise.resolve(fn(req, res, next)).catch(next);
+
 // Serve the tiny UI from /public (works locally and on Vercel Express runtime)
 const PUBLIC_DIR = path.join(process.cwd(), 'public');
 app.use(express.static(PUBLIC_DIR));
 
 app.get('/donate', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'donate.html')));
+app.get('/thanks', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'thanks.html')));
 app.get('/about', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'about.html')));
 app.get('/rules', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'rules.html')));
 app.get('/claim/:token', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'claim.html')));
@@ -39,9 +43,9 @@ app.get('/healthz', (_req, res) => res.json({ ok: true }));
 // Finished runs are persisted to Postgres and can be replayed.
 const activeRuns = new Map<string, { run: ReturnType<typeof createRun>; agentId: string; claimed: boolean }>();
 
-app.get('/api/runs', async (_req, res) => {
+app.get('/api/runs', a(async (_req: express.Request, res: express.Response) => {
   res.json({ runs: await listRuns() });
-});
+}));
 
 // --- API v1 (OpenClaw-friendly)
 const V1 = '/api/v1';
