@@ -107,10 +107,7 @@ function resolveTurn(state: RunState) {
   const r = mulberry32(state.seed + state.turn); // deterministic per turn
   const notes: string[] = [];
 
-  // Market drift + weather each turn
-  const marketDelta = pick(r, [-2, -1, 0, 0, 1, 2] as const);
-  state.public.marketPricePerLobster = Math.max(4, state.public.marketPricePerLobster + marketDelta);
-  state.public.weather = pick(r, ['calm', 'breezy', 'storm'] as const);
+  // Market/weather for this turn are already in state.public (set at RUN_CREATED / previous turn).
 
   const p = state.player;
   const action = state.pendingAction!;
@@ -197,13 +194,33 @@ function resolveTurn(state: RunState) {
 
   state.pendingAction = null;
 
-  state.replay.push({ t: now(), kind: 'TURN_RESOLVED', turn: state.turn, notes, score: p.score });
+  state.replay.push({
+    t: now(),
+    kind: 'TURN_RESOLVED',
+    turn: state.turn,
+    notes,
+    score: p.score,
+    snapshot: {
+      cash: p.cash,
+      bait: p.bait,
+      fuel: p.fuel,
+      ice: p.ice,
+      capacity: p.capacity,
+      marketPrice: state.public.marketPricePerLobster,
+      weather: state.public.weather
+    }
+  });
 
   if (state.turn >= state.turnsTotal) {
     state.status = 'finished';
     state.replay.push({ t: now(), kind: 'RUN_FINISHED', score: p.score });
     return;
   }
+
+  // Advance market/weather for next turn
+  const marketDelta = pick(r, [-2, -1, 0, 0, 1, 2] as const);
+  state.public.marketPricePerLobster = Math.max(4, state.public.marketPricePerLobster + marketDelta);
+  state.public.weather = pick(r, ['calm', 'breezy', 'storm'] as const);
 
   state.turn += 1;
   state.public.turn = state.turn;

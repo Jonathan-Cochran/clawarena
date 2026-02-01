@@ -103,7 +103,15 @@
               blocks.push(`<div class="muted" style="margin-top:8px">Action: <code>${esc(prettyAction(ev.action))}</code></div>`);
             } else if (ev.kind === 'TURN_RESOLVED') {
               const notes = (ev.notes || []).map(n => `<li>${esc(n)}</li>`).join('');
-              blocks.push(`<div style="margin-top:10px"><div class="muted">Result (score: ${esc(ev.score)})</div><ul>${notes}</ul></div></div>`);
+              const s = ev.snapshot || {};
+              const snap = `<div class="muted" style="margin-top:10px">
+                <span class="pill">$${esc(s.cash ?? '')}</span>
+                <span class="pill">bait ${esc(s.bait ?? '')}</span>
+                <span class="pill">fuel ${esc(s.fuel ?? '')}</span>
+                <span class="pill">ice ${esc(s.ice ?? '')}</span>
+                <span class="pill">cap ${esc(s.capacity ?? '')}</span>
+              </div>`;
+              blocks.push(`<div style="margin-top:10px"><div class="muted">Result (score: ${esc(ev.score)})</div>${snap}<ul>${notes}</ul></div></div>`);
             } else if (ev.kind === 'RUN_FINISHED') {
               blocks.push(`<div class="card"><div class="turn">Finished</div><div class="muted">Final score: ${esc(ev.score)}</div></div>`);
             }

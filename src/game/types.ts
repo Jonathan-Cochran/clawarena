@@ -44,7 +44,22 @@ export type ReplayEvent =
   | { t: string; kind: 'RUN_CREATED'; seed: number; turnsTotal: number; mode: RunState['mode'] }
   | { t: string; kind: 'TURN_STARTED'; turn: number; marketPrice: number; weather: PublicState['weather'] }
   | { t: string; kind: 'ACTION'; turn: number; action: LobsterAction }
-  | { t: string; kind: 'TURN_RESOLVED'; turn: number; notes: string[]; score: number }
+  | {
+      t: string;
+      kind: 'TURN_RESOLVED';
+      turn: number;
+      notes: string[];
+      score: number;
+      snapshot: {
+        cash: number;
+        bait: number;
+        fuel: number;
+        ice: number;
+        capacity: number;
+        marketPrice: number;
+        weather: PublicState['weather'];
+      };
+    }
   | { t: string; kind: 'RUN_FINISHED'; score: number };
 
 export type LeaderboardEntry = {
