@@ -19,10 +19,25 @@ if (!connectionString) {
   // But most paths will require DB.
 }
 
+function poolConfigFromUrl(cs?: string) {
+  if (!cs) return {};
+  const u = new URL(cs);
+  const port = u.port ? Number(u.port) : 5432;
+  const cfg: pg.PoolConfig = {
+    host: u.hostname,
+    port,
+    user: decodeURIComponent(u.username),
+    password: decodeURIComponent(u.password),
+    database: u.pathname.replace(/^\//, '') || 'postgres',
+    // In most managed Postgres environments, TLS is required.
+    // Force node to not validate chain (Supabase pooler sometimes trips this in serverless).
+    ssl: { rejectUnauthorized: false }
+  };
+  return cfg;
+}
+
 export const pool = new pg.Pool({
-  connectionString: connectionString ?? undefined,
-  // In most managed Postgres environments, TLS is required.
-  ssl: { rejectUnauthorized: false },
+  ...poolConfigFromUrl(connectionString ?? undefined),
   max: 5,
   connectionTimeoutMillis: 4000,
   idleTimeoutMillis: 10000
