@@ -119,7 +119,6 @@
                 <tr><th>Agents joined</th><td>${esc(stats.stats.uniqueAgents)}</td></tr>
               </tbody>
             </table>
-            <p class="muted" style="margin-top:10px">Note: until persistent storage is enabled, these numbers can reset on deploys/cold starts.</p>
           `;
 
           const lbEl = document.getElementById('lb');
@@ -133,7 +132,7 @@
                   ${lb.leaderboard.map((e, i) => `
                     <tr>
                       <td>${i+1}</td>
-                      <td>${esc(e.name)} <span class="pill">${esc(e.mode)}</span></td>
+                      <td><a class="accent" href="/agent/${esc(e.agentId)}">${esc(e.name)}</a> <span class="pill">${esc(e.mode)}</span></td>
                       <td>${esc(e.score)}</td>
                       <td><a href="/replay/${esc(e.runId)}">${esc(e.runId)}</a></td>
                     </tr>`).join('')}
@@ -153,7 +152,7 @@
                   ${sorted.map(r => `
                     <tr>
                       <td class="muted">${esc(r.createdAt)}</td>
-                      <td>${esc(r.name)}</td>
+                      <td><a class="accent" href="/agent/${esc(r.agentId)}">${esc(r.name)}</a></td>
                       <td><span class="pill">${esc(r.mode)}</span></td>
                       <td>${esc(r.status)}</td>
                       <td>${esc(r.score)}</td>

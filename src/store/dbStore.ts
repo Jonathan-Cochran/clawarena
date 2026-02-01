@@ -134,33 +134,63 @@ export async function recordScore(entry: LeaderboardEntry, agentId: string) {
   );
 }
 
-export async function listLeaderboard(filter?: { mode?: LeaderboardEntry['mode']; limit?: number }) {
+export async function listLeaderboard(filter?: {
+  mode?: LeaderboardEntry['mode'];
+  limit?: number;
+  seed?: number;
+}) {
   const mode = filter?.mode;
   const limit = filter?.limit ?? 50;
+  const seed = filter?.seed;
 
-  const r = await sql<{ run_id: string; score: number; seed: string; created_at: string; name: string; mode: 'daily' | 'free' }>(
-    `select l.run_id, l.score, l.seed, l.created_at, l.mode, a.name
+  // Leaderboard = best score per agent (per mode, optionally per seed)
+  const params: any[] = [];
+  const where: string[] = [];
+
+  if (mode) {
+    params.push(mode);
+    where.push(`l.mode = $${params.length}`);
+  }
+  if (typeof seed === 'number') {
+    params.push(seed);
+    where.push(`l.seed = $${params.length}`);
+  }
+
+  const whereSql = where.length ? `where ${where.join(' and ')}` : '';
+
+  const r = await sql<{ agent_id: string; name: string; score: number; seed: string; mode: 'daily' | 'free'; run_id: string }>(
+    `select distinct on (l.agent_id)
+        l.agent_id,
+        a.name,
+        l.score,
+        l.seed,
+        l.mode,
+        l.run_id
      from public.leaderboard_entries l
      join public.agents a on a.id = l.agent_id
-     ${mode ? 'where l.mode = $1' : ''}
-     order by l.score desc
+     ${whereSql}
+     order by l.agent_id, l.score desc, l.created_at desc
      limit ${limit}`,
-    mode ? [mode] : []
+    params
   );
 
-  return r.rows.map((row: (typeof r.rows)[number]) => ({
-    runId: row.run_id,
-    name: row.name,
-    score: row.score,
-    seed: Number(row.seed),
-    mode: row.mode,
-    createdAt: row.created_at
-  }));
+  // Order the distinct-on rows by score desc for display
+  return r.rows
+    .map((row: (typeof r.rows)[number]) => ({
+      agentId: row.agent_id,
+      runId: row.run_id,
+      name: row.name,
+      score: row.score,
+      seed: Number(row.seed),
+      mode: row.mode
+    }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
 }
 
 export async function listRuns(limit = 50) {
-  const r = await sql<{ id: string; status: string; mode: string; turns_total: number; created_at: string; score: number; seed: string; name: string }>(
-    `select r.id, r.status, r.mode, r.turns_total, r.created_at, r.score, r.seed, a.name
+  const r = await sql<{ id: string; status: string; mode: string; turns_total: number; created_at: string; score: number; seed: string; name: string; agent_id: string }>(
+    `select r.id, r.status, r.mode, r.turns_total, r.created_at, r.score, r.seed, r.agent_id, a.name
      from public.runs r
      join public.agents a on a.id = r.agent_id
      order by r.created_at desc
@@ -175,6 +205,7 @@ export async function listRuns(limit = 50) {
     turnsTotal: row.turns_total,
     createdAt: row.created_at,
     name: row.name,
+    agentId: row.agent_id,
     score: row.score,
     seed: Number(row.seed)
   }));
@@ -190,5 +221,57 @@ export async function getStats() {
     totalRunsStarted: Number(runs.rows[0]?.total ?? 0),
     totalRunsFinished: Number(runs.rows[0]?.finished ?? 0),
     uniqueAgents: Number(agents.rows[0]?.c ?? 0)
+  };
+}
+
+export async function getAgentProfile(agentId: string) {
+  const agent = await sql<{ id: string; name: string; description: string | null; status: 'pending_claim' | 'claimed'; created_at: string; claimed_at: string | null }>(
+    `select id, name, description, status, created_at, claimed_at from public.agents where id=$1 limit 1`,
+    [agentId]
+  );
+  const a = agent.rows[0];
+  if (!a) return null;
+
+  const counts = await sql<{ total: string; finished: string; best: string | null }>(
+    `select
+       count(*)::text as total,
+       sum(case when status='finished' then 1 else 0 end)::text as finished,
+       max(score)::text as best
+     from public.runs
+     where agent_id=$1`,
+    [agentId]
+  );
+
+  const recent = await sql<{ id: string; created_at: string; score: number; mode: string; seed: string; status: string }>(
+    `select id, created_at, score, mode, seed, status
+     from public.runs
+     where agent_id=$1
+     order by created_at desc
+     limit 20`,
+    [agentId]
+  );
+
+  return {
+    agent: {
+      id: a.id,
+      name: a.name,
+      description: a.description,
+      status: a.status,
+      createdAt: a.created_at,
+      claimedAt: a.claimed_at
+    },
+    stats: {
+      totalRunsStarted: Number(counts.rows[0]?.total ?? 0),
+      totalRunsFinished: Number(counts.rows[0]?.finished ?? 0),
+      bestScore: counts.rows[0]?.best != null ? Number(counts.rows[0].best) : null
+    },
+    recentRuns: recent.rows.map((r) => ({
+      id: r.id,
+      createdAt: r.created_at,
+      score: r.score,
+      mode: r.mode,
+      seed: Number(r.seed),
+      status: r.status
+    }))
   };
 }

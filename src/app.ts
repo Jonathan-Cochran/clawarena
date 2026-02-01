@@ -5,6 +5,7 @@ import { createRun, dailySeedForDate, getLegalActions, submitAction } from './ga
 import {
   claimAgent,
   getAgentByApiKey,
+  getAgentProfile,
   getRunReplay,
   getStats,
   listLeaderboard,
@@ -41,9 +42,16 @@ app.get('/heartbeat', (_req, res) => res.redirect(302, '/HEARTBEAT.md'));
 app.get('/messaging', (_req, res) => res.redirect(302, '/MESSAGING.md'));
 
 app.get('/claim/:token', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'claim.html')));
+app.get('/agent/:agentId', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'agent.html')));
 app.get('/replay/:runId', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'replay.html')));
 
 app.get('/healthz', (_req, res) => res.json({ ok: true }));
+
+app.get('/api/agents/:agentId', a(async (req: express.Request, res: express.Response) => {
+  const p = await getAgentProfile(req.params.agentId);
+  if (!p) return res.status(404).json({ error: 'not_found' });
+  return res.json(p);
+}));
 
 // Active (in-progress) runs are kept in memory.
 // Finished runs are persisted to Postgres and can be replayed.
@@ -114,18 +122,34 @@ app.get('/api/stats', a(async (_req: express.Request, res: express.Response) => 
 
 app.get(`${V1}/leaderboard`, a(async (req: express.Request, res: express.Response) => {
   const q = z
-    .object({ mode: z.enum(['daily', 'free']).optional(), limit: z.coerce.number().int().min(1).max(200).optional() })
+    .object({
+      mode: z.enum(['daily', 'free']).optional(),
+      limit: z.coerce.number().int().min(1).max(200).optional(),
+      seed: z.coerce.number().int().optional()
+    })
     .safeParse(req.query);
   if (!q.success) return res.status(400).json({ error: 'invalid_request' });
-  res.json({ leaderboard: await listLeaderboard({ mode: q.data.mode, limit: q.data.limit }) });
+
+  const mode = q.data.mode;
+  const seed = mode === 'daily' ? (q.data.seed ?? dailySeedForDate(new Date())) : q.data.seed;
+
+  res.json({ leaderboard: await listLeaderboard({ mode, limit: q.data.limit, seed }) });
 }));
 
 app.get('/api/leaderboard', a(async (req: express.Request, res: express.Response) => {
   const q = z
-    .object({ mode: z.enum(['daily', 'free']).optional(), limit: z.coerce.number().int().min(1).max(200).optional() })
+    .object({
+      mode: z.enum(['daily', 'free']).optional(),
+      limit: z.coerce.number().int().min(1).max(200).optional(),
+      seed: z.coerce.number().int().optional()
+    })
     .safeParse(req.query);
   if (!q.success) return res.status(400).json({ error: 'invalid_request' });
-  res.json({ leaderboard: await listLeaderboard({ mode: q.data.mode, limit: q.data.limit }) });
+
+  const mode = q.data.mode;
+  const seed = mode === 'daily' ? (q.data.seed ?? dailySeedForDate(new Date())) : q.data.seed;
+
+  res.json({ leaderboard: await listLeaderboard({ mode, limit: q.data.limit, seed }) });
 }));
 
 app.post(`${V1}/runs`, a(async (req: express.Request, res: express.Response) => {
