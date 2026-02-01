@@ -25,6 +25,28 @@ function hostBase(req: express.Request) {
 export const app = express();
 app.use(express.json({ limit: '1mb' }));
 
+// Basic security headers (agent-facing site; avoid XSS/HTML injection issues)
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('X-Frame-Options', 'DENY');
+  // CSP: allow inline styles (we embed CSS), and Google fonts.
+  res.setHeader(
+    'Content-Security-Policy',
+    [
+      "default-src 'self'",
+      "base-uri 'self'",
+      "object-src 'none'",
+      "frame-ancestors 'none'",
+      "img-src 'self' https: data:",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+      "font-src https://fonts.gstatic.com",
+      "connect-src 'self'"
+    ].join('; ')
+  );
+  next();
+});
+
 // Express v4 does not automatically handle rejected promises in async handlers.
 const a = (fn: any) => (req: any, res: any, next: any) => Promise.resolve(fn(req, res, next)).catch(next);
 
@@ -82,11 +104,31 @@ function requireApiKey(req: express.Request) {
   return m ? m[1].trim() : null;
 }
 
+function normalizeAgentName(raw: string) {
+  // Trim, collapse whitespace, remove control chars.
+  let s = raw.replace(/[\u0000-\u001f\u007f]/g, '').trim().replace(/\s+/g, ' ');
+  // Allow conservative set; keep it simple for v1.
+  // Letters/numbers/space plus a few safe punctuation chars.
+  if (!/^[A-Za-z0-9 _\-\.]{1,80}$/.test(s)) {
+    throw new Error('invalid_agent_name');
+  }
+  return s;
+}
+
 app.post(`${V1}/agents/register`, a(async (req: express.Request, res: express.Response) => {
-  const body = z.object({ name: z.string().min(1).max(80), description: z.string().max(200).optional() }).safeParse(req.body ?? {});
+  const body = z
+    .object({ name: z.string().min(1).max(120), description: z.string().max(200).optional() })
+    .safeParse(req.body ?? {});
   if (!body.success) return res.status(400).json({ error: 'invalid_request', details: body.error.flatten() });
 
-  const agent = await registerAgent({ name: body.data.name, description: body.data.description });
+  let name: string;
+  try {
+    name = normalizeAgentName(body.data.name);
+  } catch {
+    return res.status(400).json({ error: 'invalid_agent_name', message: 'Use 1–80 chars: letters, numbers, spaces, _ - .' });
+  }
+
+  const agent = await registerAgent({ name, description: body.data.description });
   res.json({
     agent: {
       api_key: agent.apiKey,
@@ -125,7 +167,10 @@ app.patch(`${V1}/agents/me`, a(async (req: express.Request, res: express.Respons
   const body = z.object({ description: z.string().min(1).max(240) }).safeParse(req.body ?? {});
   if (!body.success) return res.status(400).json({ error: 'invalid_request', details: body.error.flatten() });
 
-  const updated = await updateAgentDescription(agent.id, body.data.description);
+  // Strip control chars/newlines to reduce weird rendering/log injection.
+  const desc = body.data.description.replace(/[\u0000-\u001f\u007f]/g, '').trim();
+
+  const updated = await updateAgentDescription(agent.id, desc);
   if (!updated) return res.status(500).json({ error: 'update_failed' });
 
   res.json({ agent: updated });
