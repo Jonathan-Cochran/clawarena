@@ -62,7 +62,7 @@ function requireApiKey(req: express.Request) {
   return m ? m[1].trim() : null;
 }
 
-app.post(`${V1}/agents/register`, async (req, res) => {
+app.post(`${V1}/agents/register`, a(async (req: express.Request, res: express.Response) => {
   const body = z.object({ name: z.string().min(1).max(80), description: z.string().max(200).optional() }).safeParse(req.body ?? {});
   if (!body.success) return res.status(400).json({ error: 'invalid_request', details: body.error.flatten() });
 
@@ -75,9 +75,9 @@ app.post(`${V1}/agents/register`, async (req, res) => {
     },
     important: 'SAVE YOUR API KEY'
   });
-});
+}));
 
-app.post(`${V1}/agents/claim/:token`, async (req, res) => {
+app.post(`${V1}/agents/claim/:token`, a(async (req: express.Request, res: express.Response) => {
   const body = z.object({ verification_code: z.string().min(1).max(80) }).safeParse(req.body ?? {});
   if (!body.success) return res.status(400).json({ error: 'invalid_request' });
 
@@ -86,49 +86,49 @@ app.post(`${V1}/agents/claim/:token`, async (req, res) => {
   if ('error' in result) return res.status(400).json({ error: 'bad_verification_code' });
 
   res.json({ agent: { name: result.agent.name, status: result.agent.status } });
-});
+}));
 
-app.get(`${V1}/agents/me`, async (req, res) => {
+app.get(`${V1}/agents/me`, a(async (req: express.Request, res: express.Response) => {
   const key = requireApiKey(req);
   if (!key) return res.status(401).json({ error: 'missing_api_key' });
   const agent = await getAgentByApiKey(key);
   if (!agent) return res.status(401).json({ error: 'invalid_api_key' });
   res.json({ agent: { name: agent.name, description: agent.description, status: agent.status } });
-});
+}));
 
-app.get(`${V1}/agents/status`, async (req, res) => {
+app.get(`${V1}/agents/status`, a(async (req: express.Request, res: express.Response) => {
   const key = requireApiKey(req);
   if (!key) return res.status(401).json({ error: 'missing_api_key' });
   const agent = await getAgentByApiKey(key);
   if (!agent) return res.status(401).json({ error: 'invalid_api_key' });
   res.json({ status: agent.status });
-});
+}));
 
-app.get(`${V1}/stats`, async (_req, res) => {
+app.get(`${V1}/stats`, a(async (_req: express.Request, res: express.Response) => {
   res.json({ stats: await getStats() });
-});
+}));
 
-app.get('/api/stats', async (_req, res) => {
+app.get('/api/stats', a(async (_req: express.Request, res: express.Response) => {
   res.json({ stats: await getStats() });
-});
+}));
 
-app.get(`${V1}/leaderboard`, async (req, res) => {
+app.get(`${V1}/leaderboard`, a(async (req: express.Request, res: express.Response) => {
   const q = z
     .object({ mode: z.enum(['daily', 'free']).optional(), limit: z.coerce.number().int().min(1).max(200).optional() })
     .safeParse(req.query);
   if (!q.success) return res.status(400).json({ error: 'invalid_request' });
   res.json({ leaderboard: await listLeaderboard({ mode: q.data.mode, limit: q.data.limit }) });
-});
+}));
 
-app.get('/api/leaderboard', async (req, res) => {
+app.get('/api/leaderboard', a(async (req: express.Request, res: express.Response) => {
   const q = z
     .object({ mode: z.enum(['daily', 'free']).optional(), limit: z.coerce.number().int().min(1).max(200).optional() })
     .safeParse(req.query);
   if (!q.success) return res.status(400).json({ error: 'invalid_request' });
   res.json({ leaderboard: await listLeaderboard({ mode: q.data.mode, limit: q.data.limit }) });
-});
+}));
 
-app.post(`${V1}/runs`, async (req, res) => {
+app.post(`${V1}/runs`, a(async (req: express.Request, res: express.Response) => {
   const key = requireApiKey(req);
   if (!key) return res.status(401).json({ error: 'missing_api_key' });
   const agent = await getAgentByApiKey(key);
@@ -165,10 +165,10 @@ app.post(`${V1}/runs`, async (req, res) => {
   activeRuns.set(run.id, { run, agentId: agent.id, claimed: agent.status === 'claimed' });
 
   return res.json({ runId: run.id, status: run.status, turn: run.turn, turnsTotal: run.turnsTotal, mode: run.mode, seed: run.seed });
-});
+}));
 
 // Legacy v0 endpoint (no auth; used by the UI quick play)
-app.post('/api/runs', async (req, res) => {
+app.post('/api/runs', a(async (req: express.Request, res: express.Response) => {
   const body = z
     .object({
       mode: z.enum(['daily', 'free']).default('free'),
@@ -202,9 +202,9 @@ app.post('/api/runs', async (req, res) => {
   activeRuns.set(run.id, { run, agentId: agent.id, claimed: true });
 
   res.json({ runId: run.id, status: run.status, turn: run.turn, turnsTotal: run.turnsTotal, mode: run.mode, seed: run.seed });
-});
+}));
 
-app.get(`${V1}/runs/:runId/state`, async (req, res) => {
+app.get(`${V1}/runs/:runId/state`, a(async (req: express.Request, res: express.Response) => {
   const key = requireApiKey(req);
   if (!key) return res.status(401).json({ error: 'missing_api_key' });
   const agent = await getAgentByApiKey(key);
@@ -220,7 +220,7 @@ app.get(`${V1}/runs/:runId/state`, async (req, res) => {
     you: run.player,
     legalActions: getLegalActions(run)
   });
-});
+}));
 
 // Legacy v0 endpoint (UI)
 app.get('/api/runs/:runId/state', (req, res) => {
@@ -236,7 +236,7 @@ app.get('/api/runs/:runId/state', (req, res) => {
   });
 });
 
-app.post(`${V1}/runs/:runId/action`, async (req, res) => {
+app.post(`${V1}/runs/:runId/action`, a(async (req: express.Request, res: express.Response) => {
   const key = requireApiKey(req);
   if (!key) return res.status(401).json({ error: 'missing_api_key' });
   const agent = await getAgentByApiKey(key);
@@ -299,10 +299,10 @@ app.post(`${V1}/runs/:runId/action`, async (req, res) => {
   } catch (e: any) {
     return res.status(400).json({ error: 'action_failed', message: e?.message ?? String(e) });
   }
-});
+}));
 
 // Legacy v0 endpoint (UI)
-app.post('/api/runs/:runId/action', async (req, res) => {
+app.post('/api/runs/:runId/action', a(async (req: express.Request, res: express.Response) => {
   const active = activeRuns.get(req.params.runId);
   if (!active) return res.status(404).json({ error: 'not_found' });
   const run = active.run;
@@ -354,9 +354,9 @@ app.post('/api/runs/:runId/action', async (req, res) => {
   } catch (e: any) {
     res.status(400).json({ error: 'action_failed', message: e?.message ?? String(e) });
   }
-});
+}));
 
-app.get('/api/runs/:runId/replay', async (req, res) => {
+app.get('/api/runs/:runId/replay', a(async (req: express.Request, res: express.Response) => {
   const active = activeRuns.get(req.params.runId);
   if (active) {
     const run = active.run;
@@ -366,6 +366,6 @@ app.get('/api/runs/:runId/replay', async (req, res) => {
   const saved = await getRunReplay(req.params.runId);
   if (!saved) return res.status(404).json({ error: 'not_found' });
   return res.json({ runId: saved.runId, status: saved.status, replay: saved.replay, score: saved.score });
-});
+}));
 
 export default app;
