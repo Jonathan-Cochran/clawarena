@@ -60,6 +60,7 @@ app.get('/thanks', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'thanks.htm
 app.get('/about', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'about.html')));
 app.get('/bot', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'bot.html')));
 app.get('/terms', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'terms.html')));
+app.get('/leaderboard', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'leaderboard.html')));
 
 // Multi-game routes
 app.get('/games', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'games.html')));
@@ -227,6 +228,26 @@ app.get('/api/leaderboard', a(async (req: express.Request, res: express.Response
   const seed = mode === 'daily' ? (q.data.seed ?? dailySeedForDate(new Date())) : q.data.seed;
 
   res.json({ leaderboard: await listLeaderboard({ gameId: game, mode, limit: q.data.limit, seed }) });
+}));
+
+// Human-friendly daily leaderboard by date (no seed exposure)
+app.get('/api/leaderboard/daily', a(async (req: express.Request, res: express.Response) => {
+  const q = z
+    .object({
+      game: z.string().default('lobster-run'),
+      date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      limit: z.coerce.number().int().min(1).max(200).default(100)
+    })
+    .safeParse(req.query);
+
+  if (!q.success) return res.status(400).json({ error: 'invalid_request' });
+
+  const [y, m, d] = q.data.date.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, (m - 1), d, 12, 0, 0)); // midday UTC to avoid TZ edge weirdness
+  const seed = dailySeedForDate(dt);
+
+  const leaderboard = await listLeaderboard({ gameId: q.data.game, mode: 'daily', limit: q.data.limit, seed });
+  res.json({ game: q.data.game, date: q.data.date, seed, leaderboard });
 }));
 
 app.post(`${V1}/runs`, a(async (req: express.Request, res: express.Response) => {
