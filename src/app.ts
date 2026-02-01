@@ -5,6 +5,8 @@ import { createRun, dailySeedForDate, getLegalActions, submitAction } from './ga
 import {
   claimAgent,
   getAgentByApiKey,
+  addFeedback,
+  countRunsForAgentSince,
   getAgentProfile,
   updateAgentDescription,
   getRunReplay,
@@ -86,6 +88,8 @@ app.get('/api/agents/:agentId', a(async (req: express.Request, res: express.Resp
   if (!p) return res.status(404).json({ error: 'not_found' });
   return res.json(p);
 }));
+
+// Agent-authenticated feedback is registered further down after V1 is defined.
 
 // Active (in-progress) runs are kept in memory.
 // Finished runs are persisted to Postgres and can be replayed.
@@ -186,6 +190,37 @@ app.get(`${V1}/agents/status`, a(async (req: express.Request, res: express.Respo
   res.json({ status: agent.status });
 }));
 
+// Agent-authenticated feedback (stored server-side; not publicly rendered yet)
+app.post(`${V1}/feedback`, a(async (req: express.Request, res: express.Response) => {
+  const key = requireApiKey(req);
+  if (!key) return res.status(401).json({ error: 'missing_api_key' });
+  const agent = await getAgentByApiKey(key);
+  if (!agent) return res.status(401).json({ error: 'invalid_api_key' });
+
+  const body = z
+    .object({
+      game: z.string().default('lobster-run'),
+      runId: z.string().optional(),
+      rating: z.number().int().min(1).max(5).optional(),
+      comment: z.string().max(500).optional()
+    })
+    .safeParse(req.body ?? {});
+
+  if (!body.success) return res.status(400).json({ error: 'invalid_request', details: body.error.flatten() });
+
+  const comment = (body.data.comment ?? '').replace(/[\u0000-\u001f\u007f]/g, '').trim();
+
+  await addFeedback({
+    agentId: agent.id,
+    gameId: body.data.game,
+    runId: body.data.runId ?? null,
+    rating: body.data.rating ?? null,
+    comment: comment || null
+  });
+
+  res.json({ ok: true });
+}));
+
 app.get(`${V1}/stats`, a(async (_req: express.Request, res: express.Response) => {
   res.json({ stats: await getStats() });
 }));
@@ -250,11 +285,24 @@ app.get('/api/leaderboard/daily', a(async (req: express.Request, res: express.Re
   res.json({ game: q.data.game, date: q.data.date, seed, leaderboard });
 }));
 
+function utcDayStartIso(d = new Date()) {
+  const dt = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0));
+  return dt.toISOString();
+}
+
 app.post(`${V1}/runs`, a(async (req: express.Request, res: express.Response) => {
   const key = requireApiKey(req);
   if (!key) return res.status(401).json({ error: 'missing_api_key' });
   const agent = await getAgentByApiKey(key);
   if (!agent) return res.status(401).json({ error: 'invalid_api_key' });
+
+  // Simple abuse guard: limit runs per agent per day (UTC day)
+  const maxRunsPerDay = 100;
+  const todayStart = utcDayStartIso();
+  const todaysRuns = await countRunsForAgentSince(agent.id, todayStart);
+  if (todaysRuns >= maxRunsPerDay) {
+    return res.status(429).json({ error: 'rate_limited', message: `Daily run limit reached (${maxRunsPerDay}/day). Try again tomorrow.` });
+  }
 
   // Accept optional turns + mode; playerName comes from agent.
   const body = z

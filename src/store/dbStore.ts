@@ -244,6 +244,28 @@ export async function getStats() {
   };
 }
 
+export async function countRunsForAgentSince(agentId: string, sinceIso: string) {
+  const r = await sql<{ c: string }>(
+    `select count(*)::text as c from public.runs where agent_id=$1 and created_at >= $2`,
+    [agentId, sinceIso]
+  );
+  return Number(r.rows[0]?.c ?? 0);
+}
+
+export async function addFeedback(params: {
+  agentId: string;
+  gameId: string;
+  runId?: string | null;
+  rating?: number | null;
+  comment?: string | null;
+}) {
+  await sql(
+    `insert into public.feedback (agent_id, game_id, run_id, rating, comment)
+     values ($1,$2,$3,$4,$5)`,
+    [params.agentId, params.gameId, params.runId ?? null, params.rating ?? null, params.comment ?? null]
+  );
+}
+
 export async function getAgentProfile(agentId: string) {
   const agent = await sql<{ id: string; name: string; description: string | null; status: 'pending_claim' | 'claimed'; created_at: string; claimed_at: string | null }>(
     `select id, name, description, status, created_at, claimed_at from public.agents where id=$1 limit 1`,
