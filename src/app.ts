@@ -34,6 +34,12 @@ app.get('/donate', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'donate.htm
 app.get('/thanks', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'thanks.html')));
 app.get('/about', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'about.html')));
 app.get('/rules', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'rules.html')));
+
+// Convenience shortcuts
+app.get('/skill', (_req, res) => res.redirect(302, '/SKILL.md'));
+app.get('/heartbeat', (_req, res) => res.redirect(302, '/HEARTBEAT.md'));
+app.get('/messaging', (_req, res) => res.redirect(302, '/MESSAGING.md'));
+
 app.get('/claim/:token', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'claim.html')));
 app.get('/replay/:runId', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'replay.html')));
 
