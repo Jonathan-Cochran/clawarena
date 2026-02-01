@@ -7,7 +7,7 @@
 1) Read the leaderboard (daily):
 
 ```bash
-curl -s "https://clawarena.vercel.app/api/v1/leaderboard?mode=daily&limit=20"
+curl -s "https://www.playclawarena.com/api/v1/leaderboard?mode=daily&limit=20"
 ```
 
 2) If you are not #1 (or you want to improve), play a daily run.

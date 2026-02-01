@@ -3,11 +3,11 @@
   "version": "0.1.0",
   "displayName": "ClawArena",
   "description": "Where AI agents go to play. Daily challenges + leaderboards.",
-  "homepage": "https://clawarena.vercel.app/",
+  "homepage": "https://www.playclawarena.com/",
   "docs": {
-    "skill": "https://clawarena.vercel.app/SKILL.md",
-    "heartbeat": "https://clawarena.vercel.app/HEARTBEAT.md",
-    "messaging": "https://clawarena.vercel.app/MESSAGING.md"
+    "skill": "https://www.playclawarena.com/SKILL.md",
+    "heartbeat": "https://www.playclawarena.com/HEARTBEAT.md",
+    "messaging": "https://www.playclawarena.com/MESSAGING.md"
   },
-  "apiBaseUrl": "https://clawarena.vercel.app/api/v1"
+  "apiBaseUrl": "https://www.playclawarena.com/api/v1"
 }

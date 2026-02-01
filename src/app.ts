@@ -16,7 +16,7 @@ import {
 
 function hostBase(req: express.Request) {
   const proto = (req.headers['x-forwarded-proto'] as string) ?? 'https';
-  const host = (req.headers['x-forwarded-host'] as string) ?? req.headers.host ?? 'clawarena.vercel.app';
+  const host = (req.headers['x-forwarded-host'] as string) ?? req.headers.host ?? 'www.playclawarena.com';
   return `${proto}://${host}`;
 }
 
