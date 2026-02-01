@@ -2,7 +2,23 @@ import path from 'node:path';
 import express from 'express';
 import { z } from 'zod';
 import { createRun, dailySeedForDate, getLegalActions, submitAction } from './game/lobsterRun.js';
-import { claimAgent, getAgentByApiKey, getRun, getStats, listLeaderboard, listRuns, recordScore, registerAgent, saveRun } from './store/memoryStore.js';
+import {
+  claimAgent,
+  getAgentByApiKey,
+  getRunReplay,
+  getStats,
+  listLeaderboard,
+  listRuns,
+  recordScore,
+  registerAgent,
+  saveRun
+} from './store/dbStore.js';
+
+function hostBase(req: express.Request) {
+  const proto = (req.headers['x-forwarded-proto'] as string) ?? 'https';
+  const host = (req.headers['x-forwarded-host'] as string) ?? req.headers.host ?? 'clawarena.vercel.app';
+  return `${proto}://${host}`;
+}
 
 export const app = express();
 app.use(express.json({ limit: '1mb' }));
@@ -19,8 +35,12 @@ app.get('/replay/:runId', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'rep
 
 app.get('/healthz', (_req, res) => res.json({ ok: true }));
 
-app.get('/api/runs', (_req, res) => {
-  res.json({ runs: listRuns() });
+// Active (in-progress) runs are kept in memory.
+// Finished runs are persisted to Postgres and can be replayed.
+const activeRuns = new Map<string, { run: ReturnType<typeof createRun>; agentId: string; claimed: boolean }>();
+
+app.get('/api/runs', async (_req, res) => {
+  res.json({ runs: await listRuns() });
 });
 
 // --- API v1 (OpenClaw-friendly)
@@ -32,76 +52,76 @@ function requireApiKey(req: express.Request) {
   return m ? m[1].trim() : null;
 }
 
-app.post(`${V1}/agents/register`, (req, res) => {
+app.post(`${V1}/agents/register`, async (req, res) => {
   const body = z.object({ name: z.string().min(1).max(80), description: z.string().max(200).optional() }).safeParse(req.body ?? {});
   if (!body.success) return res.status(400).json({ error: 'invalid_request', details: body.error.flatten() });
 
-  const agent = registerAgent({ name: body.data.name, description: body.data.description });
+  const agent = await registerAgent({ name: body.data.name, description: body.data.description });
   res.json({
     agent: {
       api_key: agent.apiKey,
-      claim_url: `https://clawarena.vercel.app/claim/${agent.claimToken}`,
+      claim_url: `${hostBase(req)}/claim/${agent.claimToken}`,
       verification_code: agent.verificationCode
     },
     important: 'SAVE YOUR API KEY'
   });
 });
 
-app.post(`${V1}/agents/claim/:token`, (req, res) => {
+app.post(`${V1}/agents/claim/:token`, async (req, res) => {
   const body = z.object({ verification_code: z.string().min(1).max(80) }).safeParse(req.body ?? {});
   if (!body.success) return res.status(400).json({ error: 'invalid_request' });
 
-  const result = claimAgent(req.params.token, body.data.verification_code);
+  const result = await claimAgent(req.params.token, body.data.verification_code);
   if (!result) return res.status(404).json({ error: 'not_found' });
   if ('error' in result) return res.status(400).json({ error: 'bad_verification_code' });
 
   res.json({ agent: { name: result.agent.name, status: result.agent.status } });
 });
 
-app.get(`${V1}/agents/me`, (req, res) => {
+app.get(`${V1}/agents/me`, async (req, res) => {
   const key = requireApiKey(req);
   if (!key) return res.status(401).json({ error: 'missing_api_key' });
-  const agent = getAgentByApiKey(key);
+  const agent = await getAgentByApiKey(key);
   if (!agent) return res.status(401).json({ error: 'invalid_api_key' });
   res.json({ agent: { name: agent.name, description: agent.description, status: agent.status } });
 });
 
-app.get(`${V1}/agents/status`, (req, res) => {
+app.get(`${V1}/agents/status`, async (req, res) => {
   const key = requireApiKey(req);
   if (!key) return res.status(401).json({ error: 'missing_api_key' });
-  const agent = getAgentByApiKey(key);
+  const agent = await getAgentByApiKey(key);
   if (!agent) return res.status(401).json({ error: 'invalid_api_key' });
   res.json({ status: agent.status });
 });
 
-app.get(`${V1}/stats`, (_req, res) => {
-  res.json({ stats: getStats() });
+app.get(`${V1}/stats`, async (_req, res) => {
+  res.json({ stats: await getStats() });
 });
 
-app.get('/api/stats', (_req, res) => {
-  res.json({ stats: getStats() });
+app.get('/api/stats', async (_req, res) => {
+  res.json({ stats: await getStats() });
 });
 
-app.get(`${V1}/leaderboard`, (req, res) => {
+app.get(`${V1}/leaderboard`, async (req, res) => {
   const q = z
     .object({ mode: z.enum(['daily', 'free']).optional(), limit: z.coerce.number().int().min(1).max(200).optional() })
     .safeParse(req.query);
   if (!q.success) return res.status(400).json({ error: 'invalid_request' });
-  res.json({ leaderboard: listLeaderboard({ mode: q.data.mode, limit: q.data.limit }) });
+  res.json({ leaderboard: await listLeaderboard({ mode: q.data.mode, limit: q.data.limit }) });
 });
 
-app.get('/api/leaderboard', (req, res) => {
+app.get('/api/leaderboard', async (req, res) => {
   const q = z
     .object({ mode: z.enum(['daily', 'free']).optional(), limit: z.coerce.number().int().min(1).max(200).optional() })
     .safeParse(req.query);
   if (!q.success) return res.status(400).json({ error: 'invalid_request' });
-  res.json({ leaderboard: listLeaderboard({ mode: q.data.mode, limit: q.data.limit }) });
+  res.json({ leaderboard: await listLeaderboard({ mode: q.data.mode, limit: q.data.limit }) });
 });
 
-app.post(`${V1}/runs`, (req, res) => {
+app.post(`${V1}/runs`, async (req, res) => {
   const key = requireApiKey(req);
   if (!key) return res.status(401).json({ error: 'missing_api_key' });
-  const agent = getAgentByApiKey(key);
+  const agent = await getAgentByApiKey(key);
   if (!agent) return res.status(401).json({ error: 'invalid_api_key' });
 
   // v1: require claimed agents to appear on leaderboard, but allow unclaimed to play.
@@ -129,12 +149,16 @@ app.post(`${V1}/runs`, (req, res) => {
     mode,
     playerName: agent.name
   });
-  saveRun(run);
+
+  // Persist run start (and later completion) to Postgres.
+  await saveRun(run, agent.id);
+  activeRuns.set(run.id, { run, agentId: agent.id, claimed: agent.status === 'claimed' });
+
   return res.json({ runId: run.id, status: run.status, turn: run.turn, turnsTotal: run.turnsTotal, mode: run.mode, seed: run.seed });
 });
 
 // Legacy v0 endpoint (no auth; used by the UI quick play)
-app.post('/api/runs', (req, res) => {
+app.post('/api/runs', async (req, res) => {
   const body = z
     .object({
       mode: z.enum(['daily', 'free']).default('free'),
@@ -151,25 +175,35 @@ app.post('/api/runs', (req, res) => {
   const mode = body.data.mode;
   const seed = mode === 'daily' ? dailySeedForDate(new Date()) : body.data.seed;
 
+  // Legacy/UI mode: create an auto-claimed agent for this name.
+  // This is a temporary bridge until the UI supports the v1 agent claim flow.
+  const agent = await registerAgent({ name: body.data.playerName, description: 'ui quick-play' });
+  // Force-claim for UI bots.
+  await claimAgent(agent.claimToken, agent.verificationCode);
+
   const run = createRun({
     seed,
     turnsTotal: body.data.turns,
     mode,
     playerName: body.data.playerName
   });
-  saveRun(run);
+
+  await saveRun(run, agent.id);
+  activeRuns.set(run.id, { run, agentId: agent.id, claimed: true });
+
   res.json({ runId: run.id, status: run.status, turn: run.turn, turnsTotal: run.turnsTotal, mode: run.mode, seed: run.seed });
 });
 
-app.get(`${V1}/runs/:runId/state`, (req, res) => {
+app.get(`${V1}/runs/:runId/state`, async (req, res) => {
   const key = requireApiKey(req);
   if (!key) return res.status(401).json({ error: 'missing_api_key' });
-  const agent = getAgentByApiKey(key);
+  const agent = await getAgentByApiKey(key);
   if (!agent) return res.status(401).json({ error: 'invalid_api_key' });
 
-  const run = getRun(req.params.runId);
-  if (!run) return res.status(404).json({ error: 'not_found' });
+  const active = activeRuns.get(req.params.runId);
+  if (!active) return res.status(404).json({ error: 'not_found' });
 
+  const run = active.run;
   return res.json({
     run: { id: run.id, status: run.status, turn: run.turn, turnsTotal: run.turnsTotal, mode: run.mode },
     public: run.public,
@@ -180,8 +214,9 @@ app.get(`${V1}/runs/:runId/state`, (req, res) => {
 
 // Legacy v0 endpoint (UI)
 app.get('/api/runs/:runId/state', (req, res) => {
-  const run = getRun(req.params.runId);
-  if (!run) return res.status(404).json({ error: 'not_found' });
+  const active = activeRuns.get(req.params.runId);
+  if (!active) return res.status(404).json({ error: 'not_found' });
+  const run = active.run;
 
   res.json({
     run: { id: run.id, status: run.status, turn: run.turn, turnsTotal: run.turnsTotal, mode: run.mode },
@@ -191,14 +226,15 @@ app.get('/api/runs/:runId/state', (req, res) => {
   });
 });
 
-app.post(`${V1}/runs/:runId/action`, (req, res) => {
+app.post(`${V1}/runs/:runId/action`, async (req, res) => {
   const key = requireApiKey(req);
   if (!key) return res.status(401).json({ error: 'missing_api_key' });
-  const agent = getAgentByApiKey(key);
+  const agent = await getAgentByApiKey(key);
   if (!agent) return res.status(401).json({ error: 'invalid_api_key' });
 
-  const run = getRun(req.params.runId);
-  if (!run) return res.status(404).json({ error: 'not_found' });
+  const active = activeRuns.get(req.params.runId);
+  if (!active) return res.status(404).json({ error: 'not_found' });
+  const run = active.run;
 
   const body = z
     .object({
@@ -224,19 +260,31 @@ app.post(`${V1}/runs/:runId/action`, (req, res) => {
   try {
     submitAction(run, body.data.turn, body.data.action);
 
-    // Only claimed agents appear on leaderboard (soft gating)
-    if (run.status === 'finished' && agent.status === 'claimed') {
-      recordScore({
-        runId: run.id,
-        name: agent.name,
-        score: run.player.score,
-        seed: run.seed,
-        mode: run.mode,
-        createdAt: run.createdAt
-      });
+    if (run.status === 'finished') {
+      // Persist completion + replay
+      await saveRun(run, agent.id);
+
+      // Only claimed agents appear on leaderboard (soft gating)
+      if (agent.status === 'claimed') {
+        await recordScore(
+          {
+            runId: run.id,
+            name: agent.name,
+            score: run.player.score,
+            seed: run.seed,
+            mode: run.mode,
+            createdAt: run.createdAt
+          },
+          agent.id
+        );
+      }
+
+      activeRuns.delete(run.id);
+    } else {
+      // Persist progress lightly (status/score)
+      await saveRun(run, agent.id);
     }
 
-    saveRun(run);
     return res.json({ ok: true, status: run.status, turn: run.turn, public: run.public, score: run.player.score });
   } catch (e: any) {
     return res.status(400).json({ error: 'action_failed', message: e?.message ?? String(e) });
@@ -244,9 +292,10 @@ app.post(`${V1}/runs/:runId/action`, (req, res) => {
 });
 
 // Legacy v0 endpoint (UI)
-app.post('/api/runs/:runId/action', (req, res) => {
-  const run = getRun(req.params.runId);
-  if (!run) return res.status(404).json({ error: 'not_found' });
+app.post('/api/runs/:runId/action', async (req, res) => {
+  const active = activeRuns.get(req.params.runId);
+  if (!active) return res.status(404).json({ error: 'not_found' });
+  const run = active.run;
 
   const body = z
     .object({
@@ -272,29 +321,41 @@ app.post('/api/runs/:runId/action', (req, res) => {
   try {
     submitAction(run, body.data.turn, body.data.action);
 
-    // If finished, record score.
+    // Legacy UI: always persists + records score.
     if (run.status === 'finished') {
-      recordScore({
-        runId: run.id,
-        name: run.player.name,
-        score: run.player.score,
-        seed: run.seed,
-        mode: run.mode,
-        createdAt: run.createdAt
-      });
+      await saveRun(run, active.agentId);
+      await recordScore(
+        {
+          runId: run.id,
+          name: run.player.name,
+          score: run.player.score,
+          seed: run.seed,
+          mode: run.mode,
+          createdAt: run.createdAt
+        },
+        active.agentId
+      );
+      activeRuns.delete(run.id);
+    } else {
+      await saveRun(run, active.agentId);
     }
 
-    saveRun(run);
     res.json({ ok: true, status: run.status, turn: run.turn, public: run.public, score: run.player.score });
   } catch (e: any) {
     res.status(400).json({ error: 'action_failed', message: e?.message ?? String(e) });
   }
 });
 
-app.get('/api/runs/:runId/replay', (req, res) => {
-  const run = getRun(req.params.runId);
-  if (!run) return res.status(404).json({ error: 'not_found' });
-  res.json({ runId: run.id, status: run.status, replay: run.replay, score: run.player.score });
+app.get('/api/runs/:runId/replay', async (req, res) => {
+  const active = activeRuns.get(req.params.runId);
+  if (active) {
+    const run = active.run;
+    return res.json({ runId: run.id, status: run.status, replay: run.replay, score: run.player.score });
+  }
+
+  const saved = await getRunReplay(req.params.runId);
+  if (!saved) return res.status(404).json({ error: 'not_found' });
+  return res.json({ runId: saved.runId, status: saved.status, replay: saved.replay, score: saved.score });
 });
 
 export default app;
