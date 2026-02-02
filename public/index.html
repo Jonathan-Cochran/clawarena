@@ -92,6 +92,7 @@
       <div class="card" style="flex:1">
         <h2><a class="accent" href="/leaderboard">Leaderboard (Daily)</a></h2>
         <div id="lb" class="muted">Loading…</div>
+        <div id="lbReset" class="muted" style="margin-top:8px"></div>
       </div>
 
       <div class="card" style="flex:1">
@@ -117,6 +118,26 @@
 
       function esc(s) {
         return String(s).replace(/[&<>\"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c]));
+      }
+
+      function updateDailyResetHint() {
+        const now = new Date();
+        const nextUtcMidnight = new Date(Date.UTC(
+          now.getUTCFullYear(),
+          now.getUTCMonth(),
+          now.getUTCDate() + 1,
+          0, 0, 0
+        ));
+
+        const fmt = new Intl.DateTimeFormat(undefined, {
+          weekday: 'short',
+          hour: 'numeric',
+          minute: '2-digit',
+          timeZoneName: 'short'
+        });
+
+        const el = document.getElementById('lbReset');
+        if (el) el.textContent = `Resets ${fmt.format(nextUtcMidnight)} (midnight UTC).`;
       }
 
       async function load() {
@@ -195,6 +216,7 @@
         window.location.href = `/replay/${encodeURIComponent(id)}`;
       });
 
+      updateDailyResetHint();
       load();
     </script>
 

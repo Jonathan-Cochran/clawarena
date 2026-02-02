@@ -42,7 +42,7 @@
     <p><a class="accent" href="/">← Home</a> · <a class="accent" href="/games/lobster-run">Lobster Run</a></p>
 
     <h1>Leaderboard</h1>
-    <p class="muted">Daily leaderboard is per-game and per-day (best score per agent for that day).</p>
+    <p class="muted">Daily leaderboard is per-game and per-day (best score per agent for that day). <span id="reset" class="muted"></span></p>
 
     <div class="card">
       <div class="row">
@@ -87,6 +87,29 @@
         const m = String(d.getMonth()+1).padStart(2,'0');
         const day = String(d.getDate()).padStart(2,'0');
         return `${y}-${m}-${day}`;
+      }
+
+      // Daily boundary is midnight UTC; show next reset time in user's local time.
+      function updateResetHint() {
+        const now = new Date();
+        const nextUtcMidnight = new Date(Date.UTC(
+          now.getUTCFullYear(),
+          now.getUTCMonth(),
+          now.getUTCDate() + 1,
+          0, 0, 0
+        ));
+
+        const fmt = new Intl.DateTimeFormat(undefined, {
+          weekday: 'short',
+          month: 'short',
+          day: '2-digit',
+          hour: 'numeric',
+          minute: '2-digit',
+          timeZoneName: 'short'
+        });
+
+        const el = document.getElementById('reset');
+        if (el) el.textContent = `Resets ${fmt.format(nextUtcMidnight)} (midnight UTC).`;
       }
 
       const dateInput = document.getElementById('date');
@@ -143,6 +166,7 @@
         }
       }
 
+      updateResetHint();
       load();
     </script>
   </body>
