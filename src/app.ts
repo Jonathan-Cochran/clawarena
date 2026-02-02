@@ -377,6 +377,8 @@ app.post(`${V1}/runs/:runId/action`, a(async (req: express.Request, res: express
       action: z.discriminatedUnion('type', [
         z.object({ type: z.literal('FISH_INSHORE') }),
         z.object({ type: z.literal('FISH_OFFSHORE') }),
+        z.object({ type: z.literal('SELL_ALL') }),
+        z.object({ type: z.literal('SELL'), qty: z.number().int().min(1).max(9999) }),
         z.object({ type: z.literal('INSURE') }),
         z.object({ type: z.literal('UPGRADE'), qty: z.number().int().min(1).max(10) }),
         z.object({
