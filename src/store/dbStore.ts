@@ -199,6 +199,25 @@ export async function listLeaderboard(filter?: {
     .slice(0, limit);
 }
 
+export async function cleanupStaleRunningRuns(params?: { olderHours?: number; limit?: number }) {
+  const olderHours = params?.olderHours ?? 6;
+  const limit = params?.limit ?? 200;
+
+  // Delete abandoned runs (server restarts or clients that never finished).
+  // Safe because active runs are in-memory and will be re-upserted on next saveRun call.
+  await sql(
+    `delete from public.runs
+     where id in (
+       select id from public.runs
+       where status='running'
+         and created_at < now() - ($1 || ' hours')::interval
+       order by created_at asc
+       limit ${limit}
+     )`,
+    [String(olderHours)]
+  );
+}
+
 export async function listRuns(filter?: { gameId?: string; limit?: number }) {
   const limit = filter?.limit ?? 50;
   const gameId = filter?.gameId;

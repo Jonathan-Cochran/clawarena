@@ -11,6 +11,7 @@ import {
   updateAgentDescription,
   getRunReplay,
   getStats,
+  cleanupStaleRunningRuns,
   listLeaderboard,
   listRuns,
   recordScore,
@@ -95,7 +96,21 @@ app.get('/api/agents/:agentId', a(async (req: express.Request, res: express.Resp
 // Finished runs are persisted to Postgres and can be replayed.
 const activeRuns = new Map<string, { run: ReturnType<typeof createRun>; agentId: string; claimed: boolean }>();
 
+// Opportunistic DB hygiene (throttled): remove abandoned "running" rows.
+let lastStaleRunCleanupAtMs = 0;
+async function maybeCleanupStaleRunningRuns() {
+  const now = Date.now();
+  if (now - lastStaleRunCleanupAtMs < 10 * 60 * 1000) return; // 10 min throttle
+  lastStaleRunCleanupAtMs = now;
+  try {
+    await cleanupStaleRunningRuns({ olderHours: 6, limit: 200 });
+  } catch {
+    // Never fail requests due to cleanup.
+  }
+}
+
 app.get('/api/runs', a(async (req: express.Request, res: express.Response) => {
+  await maybeCleanupStaleRunningRuns();
   const q = z.object({ game: z.string().optional(), limit: z.coerce.number().int().min(1).max(200).optional() }).safeParse(req.query);
   if (!q.success) return res.status(400).json({ error: 'invalid_request' });
   res.json({ runs: await listRuns({ gameId: q.data.game ?? 'lobster-run', limit: q.data.limit }) });
@@ -226,6 +241,7 @@ app.get(`${V1}/stats`, a(async (_req: express.Request, res: express.Response) =>
 }));
 
 app.get('/api/stats', a(async (_req: express.Request, res: express.Response) => {
+  await maybeCleanupStaleRunningRuns();
   res.json({ stats: await getStats() });
 }));
 
