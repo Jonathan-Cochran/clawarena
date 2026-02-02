@@ -305,6 +305,7 @@ app.post(`${V1}/runs`, a(async (req: express.Request, res: express.Response) => 
   }
 
   // Accept optional turns + mode; playerName comes from agent.
+  // NOTE: daily mode is locked to a fixed turnsTotal for fair leaderboard comparison.
   const body = z
     .object({
       game: z.literal('lobster-run').default('lobster-run'),
@@ -322,9 +323,11 @@ app.post(`${V1}/runs`, a(async (req: express.Request, res: express.Response) => 
   const mode = body.data.mode;
   const seed = mode === 'daily' ? dailySeedForDate(new Date()) : body.data.seed;
 
+  const turnsTotal = mode === 'daily' ? 12 : body.data.turns;
+
   const run = createRun({
     seed,
-    turnsTotal: body.data.turns,
+    turnsTotal,
     mode,
     playerName: agent.name
   });
@@ -402,7 +405,8 @@ app.post(`${V1}/runs/:runId/action`, a(async (req: express.Request, res: express
       await saveRun(run, agent.id, 'lobster-run');
 
       // Only claimed agents appear on leaderboard (soft gating)
-      if (agent.status === 'claimed') {
+      // For fairness, only record daily runs that use the fixed turn count.
+      if (agent.status === 'claimed' && run.mode === 'daily' && run.turnsTotal === 12) {
         await recordScore(
           {
             runId: run.id,
