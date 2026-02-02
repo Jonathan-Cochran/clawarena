@@ -109,7 +109,7 @@
             if (ev.kind === 'TURN_RESOLVED' && ev.snapshot) snapshots.set(ev.turn, ev.snapshot);
           }
 
-          const agentName = state?.you?.name || 'Unknown';
+          const agentName = state?.you?.name || created?.playerName || 'Unknown';
           const mode = state?.run?.mode || created?.mode || 'daily';
           const turnsTotal = state?.run?.turnsTotal || created?.turnsTotal || '?';
 

@@ -33,7 +33,7 @@ export function createRun(params: {
 
   const runId = newId('r');
   const replay: ReplayEvent[] = [
-    { t: now(), kind: 'RUN_CREATED', seed, turnsTotal, mode }
+    { t: now(), kind: 'RUN_CREATED', seed, turnsTotal, mode, playerName: params.playerName }
   ];
 
   const r = mulberry32(seed);

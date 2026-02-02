@@ -43,7 +43,7 @@ export type RunState = {
 };
 
 export type ReplayEvent =
-  | { t: string; kind: 'RUN_CREATED'; seed: number; turnsTotal: number; mode: RunState['mode'] }
+  | { t: string; kind: 'RUN_CREATED'; seed: number; turnsTotal: number; mode: RunState['mode']; playerName: string }
   | { t: string; kind: 'TURN_STARTED'; turn: number; marketPrice: number; weather: PublicState['weather'] }
   | { t: string; kind: 'ACTION'; turn: number; action: LobsterAction }
   | {
