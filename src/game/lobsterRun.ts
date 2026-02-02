@@ -55,7 +55,7 @@ export function createRun(params: {
       fuel: 5,
       ice: 0,
       capacity: 20,
-      catch: 0,
+      lobsters: 0,
       insured: false,
       score: 0
     },
@@ -80,8 +80,8 @@ export function createRun(params: {
   return state;
 }
 
-export function getLegalActions(_state: RunState): LobsterAction[] {
-  return [
+export function getLegalActions(state: RunState): LobsterAction[] {
+  const actions: LobsterAction[] = [
     { type: 'FISH_INSHORE' },
     { type: 'FISH_OFFSHORE' },
     { type: 'INSURE' },
@@ -90,6 +90,13 @@ export function getLegalActions(_state: RunState): LobsterAction[] {
     { type: 'BUY', item: 'fuel', qty: 1 },
     { type: 'BUY', item: 'ice', qty: 1 }
   ];
+
+  if (state.player.lobsters > 0) {
+    actions.push({ type: 'SELL_ALL' });
+    actions.push({ type: 'SELL', qty: 1 });
+  }
+
+  return actions;
 }
 
 export function submitAction(state: RunState, turn: number, action: LobsterAction): void {
@@ -143,6 +150,20 @@ function resolveTurn(state: RunState) {
       (p as any)[action.item] += action.qty;
       notes.push(`Bought ${action.qty} ${action.item}.`);
     }
+  } else if (action.type === 'SELL' || action.type === 'SELL_ALL') {
+    const qty = action.type === 'SELL_ALL' ? p.lobsters : Math.max(0, Math.floor(action.qty));
+    if (qty <= 0) {
+      notes.push('Nothing to sell.');
+    } else if (p.lobsters < qty) {
+      notes.push(`Tried to sell ${qty}, but only had ${p.lobsters} lobster.`);
+    } else {
+      const revenue = qty * state.public.marketPricePerLobster;
+      p.lobsters -= qty;
+      p.cash += revenue;
+      // Score = profit ($). Sales increase score.
+      p.score += revenue;
+      notes.push(`Sold ${qty} lobster @ $${state.public.marketPricePerLobster} = $${revenue}.`);
+    }
   } else if (action.type === 'FISH_INSHORE' || action.type === 'FISH_OFFSHORE') {
     const fuelCost = action.type === 'FISH_OFFSHORE' ? 2 : 1;
     const baitCost = action.type === 'FISH_OFFSHORE' ? 2 : 1;
@@ -164,33 +185,25 @@ function resolveTurn(state: RunState) {
         notes.push('Storm reduced the catch.');
       }
 
-      // Spoilage if no ice and catch already stored
+      // Spoilage if no ice and inventory already stored
       const spoilChance = p.ice > 0 ? 0 : 0.15;
-      if (r() < spoilChance && p.catch > 0) {
-        const spoiled = Math.min(p.catch, 5);
-        p.catch -= spoiled;
+      if (r() < spoilChance && p.lobsters > 0) {
+        const spoiled = Math.min(p.lobsters, 5);
+        p.lobsters -= spoiled;
         notes.push(`Lost ${spoiled} lobster to spoilage (no ice).`);
       }
 
       // Cap at capacity
-      const room = Math.max(0, p.capacity - p.catch);
+      const room = Math.max(0, p.capacity - p.lobsters);
       const stored = Math.min(room, caught);
-      p.catch += stored;
+      p.lobsters += stored;
       if (stored < caught) notes.push(`Hit capacity; tossed ${caught - stored}.`);
 
       notes.push(`Fished ${action.type === 'FISH_OFFSHORE' ? 'offshore' : 'inshore'}: +${stored} lobster stored.`);
     }
   }
 
-  // Auto-sell at end of turn
-  if (p.catch > 0) {
-    const revenue = p.catch * state.public.marketPricePerLobster;
-    p.cash += revenue;
-    // Score = profit ($). Sales increase score.
-    p.score += revenue;
-    notes.push(`Sold ${p.catch} lobster @ $${state.public.marketPricePerLobster} = $${revenue}.`);
-    p.catch = 0;
-  }
+  // No auto-sell: inventory carries turn-to-turn (up to capacity)
 
   state.pendingAction = null;
 
@@ -206,6 +219,7 @@ function resolveTurn(state: RunState) {
       fuel: p.fuel,
       ice: p.ice,
       capacity: p.capacity,
+      lobsters: p.lobsters,
       marketPrice: state.public.marketPricePerLobster,
       weather: state.public.weather
     }

@@ -146,6 +146,7 @@
                 <span class="chip fuel"><span class="k">fuel</span><span class="v">${esc(s.fuel ?? '')}</span><span class="d">${esc(delta('fuel'))}</span></span>
                 <span class="chip ice"><span class="k">ice</span><span class="v">${esc(s.ice ?? '')}</span><span class="d">${esc(delta('ice'))}</span></span>
                 <span class="chip cap"><span class="k">cap</span><span class="v">${esc(s.capacity ?? '')}</span><span class="d">${esc(delta('capacity'))}</span></span>
+                <span class="chip"><span class="k">lobsters</span><span class="v">${esc(s.lobsters ?? '')}</span><span class="d">${esc(delta('lobsters'))}</span></span>
               </div>`;
 
               blocks.push(`<div style="margin-top:10px"><div class="muted">Result (score: ${esc(ev.score)})</div>${snap}<ul>${notes}</ul></div></div>`);

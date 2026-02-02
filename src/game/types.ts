@@ -3,6 +3,8 @@ export type RunId = string;
 export type LobsterAction =
   | { type: 'FISH_INSHORE' }
   | { type: 'FISH_OFFSHORE' }
+  | { type: 'SELL'; qty: number }
+  | { type: 'SELL_ALL' }
   | { type: 'BUY'; item: 'bait' | 'fuel' | 'ice'; qty: number }
   | { type: 'UPGRADE'; qty: number }
   | { type: 'INSURE' };
@@ -14,7 +16,7 @@ export type RunPlayer = {
   fuel: number;
   ice: number;
   capacity: number;
-  catch: number;
+  lobsters: number; // inventory carried turn-to-turn
   insured: boolean;
   score: number;
 };
@@ -56,6 +58,7 @@ export type ReplayEvent =
         fuel: number;
         ice: number;
         capacity: number;
+        lobsters: number;
         marketPrice: number;
         weather: PublicState['weather'];
       };
