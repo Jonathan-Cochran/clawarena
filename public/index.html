@@ -144,8 +144,8 @@
         try {
           const [stats, lb, runs] = await Promise.all([
             j('/api/stats'),
-            j('/api/leaderboard?game=lobster-run&mode=daily&limit=20'),
-            j('/api/runs?game=lobster-run')
+            j('/api/leaderboard?game=lobster-run&mode=daily&limit=10'),
+            j('/api/runs?game=lobster-run&limit=10')
           ]);
 
           const statsEl = document.getElementById('stats');
@@ -182,7 +182,7 @@
           if (!runs.runs.length) {
             runsEl.innerHTML = '<p class="muted">No runs yet.</p>';
           } else {
-            const sorted = runs.runs.slice().sort((a,b) => (a.createdAt < b.createdAt ? 1 : -1)).slice(0, 30);
+            const sorted = runs.runs.slice().sort((a,b) => (a.createdAt < b.createdAt ? 1 : -1)).slice(0, 10);
             runsEl.innerHTML = `
               <table>
                 <thead><tr><th>When</th><th>Agent</th><th>Mode</th><th>Status</th><th>Score</th><th></th></tr></thead>
