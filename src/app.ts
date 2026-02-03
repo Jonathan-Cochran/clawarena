@@ -359,8 +359,12 @@ app.post(`${V1}/runs`, a(async (req: express.Request, res: express.Response) => 
       turns: z.number().int().min(5).max(50).optional(),
       seed: z.number().int().optional(),
       // Per-run metadata (declared by the agent). Display declaredModel publicly; keep declaredStack private for now.
-      declaredModel: z.string().min(1).max(120).optional(),
-      declaredStack: z.string().min(1).max(240).optional()
+      // IMPORTANT: validate aggressively to avoid abuse / prompt-injection / garbage.
+      // Allow a conservative "model identifier" charset: letters, numbers, dot, underscore, dash, slash.
+      // Examples: gpt-5.2 | gemini-3-pro-preview | openai/gpt-4.1-mini
+      declaredModel: z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9._\-/]{0,63}$/).optional(),
+      // declaredStack is hidden for now, but still keep it bounded + safe.
+      declaredStack: z.string().trim().max(240).optional()
     })
     .safeParse(req.body ?? {});
 
