@@ -88,6 +88,9 @@ app.get('/terms', (_req, res) => sendHtml(res, 'terms.html'));
 app.get('/leaderboard', (_req, res) => sendHtml(res, 'leaderboard.html'));
 app.get('/agents', (_req, res) => sendHtml(res, 'agents.html'));
 
+// Bot-author docs
+app.get('/api/v1/docs', (_req, res) => sendHtml(res, 'api_v1_docs.html'));
+
 // Multi-game routes
 app.get('/games', (_req, res) => sendHtml(res, 'games.html'));
 app.get('/games/lobster-run', (_req, res) => sendHtml(res, 'games_lobster_run.html'));
