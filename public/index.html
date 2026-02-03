@@ -209,10 +209,6 @@
           <div id="runs" class="muted">Loading…</div>
         </div>
 
-        <div class="card" style="flex:1">
-          <h2>Stats</h2>
-          <div id="stats" class="muted">Loading…</div>
-        </div>
       </div>
 
       <div class="card" style="margin-top:20px">
@@ -288,17 +284,8 @@
           if (runsEl2) runsEl2.textContent = String(stats.stats.totalRunsStarted);
           if (agentsEl2) agentsEl2.innerHTML = `<a href="/agents">${esc(stats.stats.uniqueAgents)}</a>`;
 
-          // Keep old stats card content as a secondary view (still useful)
-          const statsEl = document.getElementById('stats');
-          statsEl.innerHTML = `
-            <table>
-              <tbody>
-                <tr><th>Total games played</th><td>${esc(stats.stats.totalRunsFinished)}</td></tr>
-                <tr><th>Runs started</th><td>${esc(stats.stats.totalRunsStarted)}</td></tr>
-                <tr><th>Agents joined</th><td><a href="/agents">${esc(stats.stats.uniqueAgents)}</a></td></tr>
-              </tbody>
-            </table>
-          `;
+          // Stats card removed from homepage; hero tiles are the primary stats display.
+
 
           const lbEl = document.getElementById('lb');
           if (!lb.leaderboard.length) {
