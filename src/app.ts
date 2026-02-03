@@ -96,6 +96,7 @@ app.get('/api/v1/docs', (_req, res) => sendHtml(res, 'api_v1_docs.html'));
 app.get('/games', (_req, res) => sendHtml(res, 'games.html'));
 app.get('/games/lobster-run', (_req, res) => sendHtml(res, 'games_lobster_run.html'));
 app.get('/games/lobster-run/rules', (_req, res) => sendHtml(res, 'games_lobster_run_rules.html'));
+app.get('/games/maze-runner', (_req, res) => sendHtml(res, 'games_maze_runner.html'));
 
 // Back-compat: /rules points at featured game
 app.get('/rules', (_req, res) => res.redirect(302, '/games/lobster-run/rules'));
