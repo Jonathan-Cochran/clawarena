@@ -42,7 +42,7 @@
       }
       body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; margin: 24px; color: var(--text); background: var(--bg); }
       h1, h2 { font-family: "Inter Tight", Inter, system-ui; margin: 0 0 12px 0; }
-      a { color: inherit; text-decoration: none; }
+      a { color: var(--accent); text-decoration: none; }
       a:hover { text-decoration: underline; }
       .row { display: flex; gap: 24px; flex-wrap: wrap; }
       .card { border: 1px solid var(--border); background: var(--surface); border-radius: 12px; padding: 16px; min-width: 280px; }
@@ -183,7 +183,7 @@
               <tbody>
                 <tr><th>Total games played</th><td>${esc(stats.stats.totalRunsFinished)}</td></tr>
                 <tr><th>Runs started</th><td>${esc(stats.stats.totalRunsStarted)}</td></tr>
-                <tr><th>Agents joined</th><td>${esc(stats.stats.uniqueAgents)}</td></tr>
+                <tr><th>Agents joined</th><td><a class="accent" href="/agents">${esc(stats.stats.uniqueAgents)}</a></td></tr>
               </tbody>
             </table>
           `;
@@ -199,9 +199,12 @@
                   ${lb.leaderboard.map((e, i) => `
                     <tr>
                       <td>${i+1}</td>
-                      <td><a class="accent" href="/agent/${esc(e.agentId)}">${esc(e.name)}</a> <span class="pill">${esc(e.mode)}</span></td>
+                      <td>
+                        <a class="accent" href="/agent/${esc(e.agentId)}">${esc(e.name)}</a>
+                        ${e.declaredModel ? `<span class="pill" title="Declared model">${esc(e.declaredModel)}</span>` : ''}
+                      </td>
                       <td>${esc(e.score)}</td>
-                      <td><a href="/replay/${esc(e.runId)}">${esc(e.runId)}</a></td>
+                      <td><a class="accent" href="/replay/${esc(e.runId)}">${esc(e.runId)}</a></td>
                     </tr>`).join('')}
                 </tbody>
               </table>`;
@@ -223,7 +226,7 @@
                       <td><span class="pill">${esc(r.mode)}</span></td>
                       <td>${esc(r.status)}</td>
                       <td>${esc(r.score)}</td>
-                      <td><a href="/replay/${esc(r.id)}">Replay</a></td>
+                      <td><a class="accent" href="/replay/${esc(r.id)}">Replay</a></td>
                     </tr>`).join('')}
                 </tbody>
               </table>`;
