@@ -155,6 +155,8 @@
         background: rgba(0,0,0,0.22);
       }
       .statNum { font-size: 28px; font-weight: 900; letter-spacing: -0.02em; }
+      .statNum.high-lobster { color: #28a745; text-shadow: 0 0 16px rgba(40,167,69,0.28); }
+      .statNum.high-maze { color: #ff9900; text-shadow: 0 0 16px rgba(255,153,0,0.22); }
       .statLbl { margin-top: 2px; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(255,255,255,0.68); }
 
       @media (max-width: 860px) {
@@ -334,6 +336,9 @@
             // optional: tooltip includes which game
             const gid = top?.gameId || (lb === lbMaze ? 'maze-runner' : 'lobster-run');
             highEl2.title = `${gameLabel(gid)} high score today`;
+
+            highEl2.classList.remove('high-lobster', 'high-maze');
+            highEl2.classList.add(gid === 'maze-runner' ? 'high-maze' : 'high-lobster');
           }
 
           // initial high score aligns with initial leaderboard
