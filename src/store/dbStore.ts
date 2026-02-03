@@ -93,20 +93,29 @@ export async function claimAgent(claimToken: string, verificationCode: string) {
   return { agent: upd.rows[0]! };
 }
 
-export async function saveRun(state: RunState, agentId: string) {
+export async function updateAgentDescription(agentId: string, description: string) {
+  const r = await sql<{ id: string; name: string; description: string | null; status: AgentRecord['status'] }>(
+    `update public.agents set description=$2 where id=$1 returning id, name, description, status`,
+    [agentId, description]
+  );
+  return r.rows[0] ?? null;
+}
+
+export async function saveRun(state: RunState, agentId: string, gameId: string) {
   // Upsert run record. We persist the replay_json only when finished to reduce writes.
   const replayJson = state.status === 'finished' ? JSON.stringify(state.replay) : null;
   const finishedAt = state.status === 'finished' ? new Date().toISOString() : null;
 
   await sql(
-    `insert into public.runs (id, agent_id, mode, seed, turns_total, status, score, created_at, finished_at, replay_json)
-     values ($1,$2,$3,$4,$5,$6,$7, now(), $8, $9)
+    `insert into public.runs (id, agent_id, game_id, mode, seed, turns_total, status, score, created_at, finished_at, replay_json)
+     values ($1,$2,$3,$4,$5,$6,$7,$8, now(), $9, $10)
      on conflict (id) do update set
+       game_id = excluded.game_id,
        status = excluded.status,
        score = excluded.score,
        finished_at = coalesce(excluded.finished_at, public.runs.finished_at),
        replay_json = coalesce(excluded.replay_json, public.runs.replay_json)`,
-    [state.id, agentId, state.mode, state.seed, state.turnsTotal, state.status, state.player.score, finishedAt, replayJson]
+    [state.id, agentId, gameId, state.mode, state.seed, state.turnsTotal, state.status, state.player.score, finishedAt, replayJson]
   );
 }
 
@@ -126,55 +135,116 @@ export async function getRunReplay(id: RunId): Promise<{ runId: string; status: 
   return { runId: row.id, status: row.status, score: row.score, replay };
 }
 
-export async function recordScore(entry: LeaderboardEntry, agentId: string) {
+export async function recordScore(entry: LeaderboardEntry, agentId: string, gameId: string) {
   await sql(
-    `insert into public.leaderboard_entries (mode, run_id, agent_id, score, seed)
-     values ($1,$2,$3,$4,$5)`,
-    [entry.mode, entry.runId, agentId, entry.score, entry.seed]
+    `insert into public.leaderboard_entries (game_id, mode, run_id, agent_id, score, seed)
+     values ($1,$2,$3,$4,$5,$6)`,
+    [gameId, entry.mode, entry.runId, agentId, entry.score, entry.seed]
   );
 }
 
-export async function listLeaderboard(filter?: { mode?: LeaderboardEntry['mode']; limit?: number }) {
+export async function listLeaderboard(filter?: {
+  gameId: string;
+  mode?: LeaderboardEntry['mode'];
+  limit?: number;
+  seed?: number;
+}) {
+  const gameId = filter?.gameId;
   const mode = filter?.mode;
   const limit = filter?.limit ?? 50;
+  const seed = filter?.seed;
 
-  const r = await sql<{ run_id: string; score: number; seed: string; created_at: string; name: string; mode: 'daily' | 'free' }>(
-    `select l.run_id, l.score, l.seed, l.created_at, l.mode, a.name
+  // Leaderboard = best score per agent (per game_id + mode, optionally per seed)
+  const params: any[] = [gameId];
+  const where: string[] = [`l.game_id = $1`];
+
+  if (mode) {
+    params.push(mode);
+    where.push(`l.mode = $${params.length}`);
+  }
+  if (typeof seed === 'number') {
+    params.push(seed);
+    where.push(`l.seed = $${params.length}`);
+  }
+
+  const whereSql = where.length ? `where ${where.join(' and ')}` : '';
+
+  const r = await sql<{ agent_id: string; name: string; score: number; seed: string; mode: 'daily' | 'free'; run_id: string }>(
+    `select distinct on (l.agent_id)
+        l.agent_id,
+        a.name,
+        l.score,
+        l.seed,
+        l.mode,
+        l.run_id
      from public.leaderboard_entries l
      join public.agents a on a.id = l.agent_id
-     ${mode ? 'where l.mode = $1' : ''}
-     order by l.score desc
+     ${whereSql}
+     order by l.agent_id, l.score desc, l.created_at desc
      limit ${limit}`,
-    mode ? [mode] : []
+    params
   );
 
-  return r.rows.map((row: (typeof r.rows)[number]) => ({
-    runId: row.run_id,
-    name: row.name,
-    score: row.score,
-    seed: Number(row.seed),
-    mode: row.mode,
-    createdAt: row.created_at
-  }));
+  // Order the distinct-on rows by score desc for display
+  return r.rows
+    .map((row: (typeof r.rows)[number]) => ({
+      agentId: row.agent_id,
+      runId: row.run_id,
+      name: row.name,
+      score: row.score,
+      seed: Number(row.seed),
+      mode: row.mode
+    }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
 }
 
-export async function listRuns(limit = 50) {
-  const r = await sql<{ id: string; status: string; mode: string; turns_total: number; created_at: string; score: number; seed: string; name: string }>(
-    `select r.id, r.status, r.mode, r.turns_total, r.created_at, r.score, r.seed, a.name
+export async function cleanupStaleRunningRuns(params?: { olderHours?: number; limit?: number }) {
+  const olderHours = params?.olderHours ?? 6;
+  const limit = params?.limit ?? 200;
+
+  // Delete abandoned runs (server restarts or clients that never finished).
+  // Safe because active runs are in-memory and will be re-upserted on next saveRun call.
+  await sql(
+    `delete from public.runs
+     where id in (
+       select id from public.runs
+       where status='running'
+         and created_at < now() - ($1 || ' hours')::interval
+       order by created_at asc
+       limit ${limit}
+     )`,
+    [String(olderHours)]
+  );
+}
+
+export async function listRuns(filter?: { gameId?: string; limit?: number }) {
+  const limit = filter?.limit ?? 50;
+  const gameId = filter?.gameId;
+  const params: any[] = [];
+  const where = gameId ? 'where r.game_id = $1' : '';
+  if (gameId) params.push(gameId);
+
+  const r = await sql<{ id: string; status: string; mode: string; turns_total: number; created_at: string; score: number; seed: string; name: string; agent_id: string; game_id: string }>(
+    `select r.id, r.status, r.mode, r.turns_total, r.created_at, r.score, r.seed, r.agent_id, r.game_id, a.name
      from public.runs r
      join public.agents a on a.id = r.agent_id
+     ${where}
      order by r.created_at desc
-     limit ${limit}`
+     limit ${limit}`,
+    params
   );
 
   return r.rows.map((row: (typeof r.rows)[number]) => ({
     id: row.id,
     status: row.status,
     mode: row.mode,
+    gameId: row.game_id,
     turn: row.turns_total,
     turnsTotal: row.turns_total,
     createdAt: row.created_at,
     name: row.name,
+    agentId: row.agent_id,
     score: row.score,
     seed: Number(row.seed)
   }));
@@ -190,5 +260,79 @@ export async function getStats() {
     totalRunsStarted: Number(runs.rows[0]?.total ?? 0),
     totalRunsFinished: Number(runs.rows[0]?.finished ?? 0),
     uniqueAgents: Number(agents.rows[0]?.c ?? 0)
+  };
+}
+
+export async function countRunsForAgentSince(agentId: string, sinceIso: string) {
+  const r = await sql<{ c: string }>(
+    `select count(*)::text as c from public.runs where agent_id=$1 and created_at >= $2`,
+    [agentId, sinceIso]
+  );
+  return Number(r.rows[0]?.c ?? 0);
+}
+
+export async function addFeedback(params: {
+  agentId: string;
+  gameId: string;
+  runId?: string | null;
+  rating?: number | null;
+  comment?: string | null;
+}) {
+  await sql(
+    `insert into public.feedback (agent_id, game_id, run_id, rating, comment)
+     values ($1,$2,$3,$4,$5)`,
+    [params.agentId, params.gameId, params.runId ?? null, params.rating ?? null, params.comment ?? null]
+  );
+}
+
+export async function getAgentProfile(agentId: string) {
+  const agent = await sql<{ id: string; name: string; description: string | null; status: 'pending_claim' | 'claimed'; created_at: string; claimed_at: string | null }>(
+    `select id, name, description, status, created_at, claimed_at from public.agents where id=$1 limit 1`,
+    [agentId]
+  );
+  const a = agent.rows[0];
+  if (!a) return null;
+
+  const counts = await sql<{ total: string; finished: string; best: string | null }>(
+    `select
+       count(*)::text as total,
+       sum(case when status='finished' then 1 else 0 end)::text as finished,
+       max(score)::text as best
+     from public.runs
+     where agent_id=$1`,
+    [agentId]
+  );
+
+  const recent = await sql<{ id: string; created_at: string; score: number; mode: string; seed: string; status: string }>(
+    `select id, created_at, score, mode, seed, status
+     from public.runs
+     where agent_id=$1
+     order by created_at desc
+     limit 20`,
+    [agentId]
+  );
+
+  return {
+    agent: {
+      id: a.id,
+      name: a.name,
+      description: a.description,
+      status: a.status,
+      createdAt: a.created_at,
+      claimedAt: a.claimed_at
+    },
+    stats: {
+      totalRunsStarted: Number(counts.rows[0]?.total ?? 0),
+      totalRunsFinished: Number(counts.rows[0]?.finished ?? 0),
+      bestScore: counts.rows[0]?.best != null ? Number(counts.rows[0].best) : null
+    },
+    recentRuns: recent.rows.map((r) => ({
+      id: r.id,
+      createdAt: r.created_at,
+      score: r.score,
+      mode: r.mode,
+      seed: Number(r.seed),
+      status: r.status
+    }))
   };
 }

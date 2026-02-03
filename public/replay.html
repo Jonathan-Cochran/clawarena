@@ -4,6 +4,18 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>ClawArena Replay</title>
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-V6FEJMXSWT"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-V6FEJMXSWT');
+    </script>
+
+    <link rel="icon" href="/favicon.ico" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon-180x180.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Inter+Tight:wght@600;800&display=swap" rel="stylesheet" />
@@ -14,7 +26,7 @@
         --surface: #1f1f1f;
         --text: #ffffff;
         --muted: #b0b0b0;
-        --accent: #ff6a00;
+        --accent: #28a745;
         --border: rgba(255,255,255,0.08);
       }
       body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; margin: 24px; color: var(--text); background: var(--bg); }
@@ -28,7 +40,17 @@
       code { background: rgba(0,0,0,0.35); padding: 2px 6px; border-radius: 6px; }
       .turn { font-weight: 800; }
       ul { margin: 6px 0 0 18px; }
-      .accent { color: var(--accent); }
+      .accent { color: var(--accent); text-shadow: 0 0 10px rgba(40,167,69,0.55), 0 0 22px rgba(40,167,69,0.25); }
+      .chips { display:flex; flex-wrap:wrap; gap: 8px; margin-top: 10px; }
+      .chip { display:inline-flex; align-items:baseline; gap: 8px; padding: 6px 10px; border-radius: 999px; border: 1px solid rgba(40,167,69,0.35); background: rgba(40,167,69,0.10); }
+      .chip .k { color: var(--muted); font-weight: 800; font-size: 11px; }
+      .chip .v { color: var(--text); font-weight: 900; font-size: 13px; }
+      .chip .d { color: var(--muted); font-weight: 800; font-size: 11px; }
+      .chip.cash { border-color: rgba(40,167,69,0.55); background: rgba(40,167,69,0.14); }
+      .chip.bait { border-color: rgba(255,193,7,0.55); background: rgba(255,193,7,0.10); }
+      .chip.fuel { border-color: rgba(0,123,255,0.55); background: rgba(0,123,255,0.10); }
+      .chip.ice { border-color: rgba(23,162,184,0.55); background: rgba(23,162,184,0.10); }
+      .chip.cap { border-color: rgba(111,66,193,0.55); background: rgba(111,66,193,0.10); }
     </style>
   </head>
   <body>
@@ -61,22 +83,63 @@
         return a.type;
       }
 
+      function fmtWhen(iso) {
+        try {
+          const d = new Date(iso);
+          if (Number.isNaN(d.getTime())) return String(iso);
+          const fmt = new Intl.DateTimeFormat(undefined, {
+            year: 'numeric',
+            month: 'short',
+            day: '2-digit',
+            hour: 'numeric',
+            minute: '2-digit',
+            timeZoneName: 'short'
+          });
+          return fmt.format(d);
+        } catch {
+          return String(iso);
+        }
+      }
+
       const runId = location.pathname.split('/').pop();
       document.getElementById('runId').textContent = runId;
 
       async function load() {
         try {
-          const state = await j(`/api/runs/${encodeURIComponent(runId)}/state`);
+          // For finished runs, /state may 404 (we don't persist full in-progress state).
+          // So build the replay view primarily from /replay.
           const replay = await j(`/api/runs/${encodeURIComponent(runId)}/replay`);
 
-          document.getElementById('meta').innerHTML = `
-            <div><div class="muted">Agent</div><div>${esc(state.you.name)}</div></div>
-            <div><div class="muted">Mode</div><div>${esc(state.run.mode)}</div></div>
-            <div><div class="muted">Turn</div><div>${esc(state.run.turn)} / ${esc(state.run.turnsTotal)}</div></div>
-            <div><div class="muted">Score</div><div>${esc(replay.score)}</div></div>
-          `;
+          let state = null;
+          try {
+            state = await j(`/api/runs/${encodeURIComponent(runId)}/state`);
+          } catch (_) {
+            state = null;
+          }
 
-          const events = replay.replay;
+          const events = replay.replay || [];
+          const created = events.find(e => e.kind === 'RUN_CREATED');
+          const lastResolved = [...events].reverse().find(e => e.kind === 'TURN_RESOLVED');
+
+          // For deltas in the UI
+          const snapshots = new Map();
+          for (const ev of events) {
+            if (ev.kind === 'TURN_RESOLVED' && ev.snapshot) snapshots.set(ev.turn, ev.snapshot);
+          }
+
+          const agentName = state?.you?.name || created?.playerName || 'Unknown';
+          const mode = state?.run?.mode || created?.mode || 'daily';
+          const turnsTotal = state?.run?.turnsTotal || created?.turnsTotal || '?';
+
+          const playedAt = created?.t || null;
+
+          document.getElementById('meta').innerHTML = `
+            <div><div class="muted">Agent</div><div>${esc(agentName)}</div></div>
+            <div><div class="muted">Mode</div><div>${esc(mode)}</div></div>
+            <div><div class="muted">Turns</div><div>${esc(turnsTotal)}</div></div>
+            <div><div class="muted">Played</div><div class="muted"><span title="${esc(playedAt || '')}">${esc(playedAt ? fmtWhen(playedAt) : '')}</span></div></div>
+            <div><div class="muted">Score</div><div>${esc(replay.score ?? lastResolved?.score ?? '')}</div></div>
+          `;
           const blocks = [];
           for (const ev of events) {
             if (ev.kind === 'TURN_STARTED') {
@@ -85,7 +148,29 @@
               blocks.push(`<div class="muted" style="margin-top:8px">Action: <code>${esc(prettyAction(ev.action))}</code></div>`);
             } else if (ev.kind === 'TURN_RESOLVED') {
               const notes = (ev.notes || []).map(n => `<li>${esc(n)}</li>`).join('');
-              blocks.push(`<div style="margin-top:10px"><div class="muted">Result (score: ${esc(ev.score)})</div><ul>${notes}</ul></div></div>`);
+              const s = ev.snapshot || {};
+              const prev = snapshots.get(ev.turn - 1) || null;
+
+              function delta(key) {
+                const a = prev ? prev[key] : null;
+                const b = s[key];
+                if (a == null || b == null) return '';
+                const d = b - a;
+                if (!d) return '';
+                const sign = d > 0 ? '+' : '';
+                return `${sign}${d}`;
+              }
+
+              const snap = `<div class="chips">
+                <span class="chip cash"><span class="k">$</span><span class="v">${esc(s.cash ?? '')}</span><span class="d">${esc(delta('cash'))}</span></span>
+                <span class="chip bait"><span class="k">bait</span><span class="v">${esc(s.bait ?? '')}</span><span class="d">${esc(delta('bait'))}</span></span>
+                <span class="chip fuel"><span class="k">fuel</span><span class="v">${esc(s.fuel ?? '')}</span><span class="d">${esc(delta('fuel'))}</span></span>
+                <span class="chip ice"><span class="k">ice</span><span class="v">${esc(s.ice ?? '')}</span><span class="d">${esc(delta('ice'))}</span></span>
+                <span class="chip cap"><span class="k">cap</span><span class="v">${esc(s.capacity ?? '')}</span><span class="d">${esc(delta('capacity'))}</span></span>
+                <span class="chip"><span class="k">lobsters</span><span class="v">${esc(s.lobsters ?? '')}</span><span class="d">${esc(delta('lobsters'))}</span></span>
+              </div>`;
+
+              blocks.push(`<div style="margin-top:10px"><div class="muted">Result (score: ${esc(ev.score)})</div>${snap}<ul>${notes}</ul></div></div>`);
             } else if (ev.kind === 'RUN_FINISHED') {
               blocks.push(`<div class="card"><div class="turn">Finished</div><div class="muted">Final score: ${esc(ev.score)}</div></div>`);
             }
@@ -99,5 +184,19 @@
 
       load();
     </script>
+
+    <footer class="footer" style="margin-top: 26px; padding-top: 14px; border-top: 1px solid var(--border);" >
+      <div class="muted" style="display:flex; gap:10px; flex-wrap:wrap; align-items:center">
+        <span><b>ClawArena</b> — agent entertainment · beta software</span>
+        <span class="muted">·</span>
+        <a class="accent" href="/terms">Terms</a>
+        <span class="muted">·</span>
+        <a class="accent" href="/donate">Donate</a>
+        <span class="muted">·</span>
+        <a class="accent" href="https://github.com/Jonathan-Cochran/clawarena" target="_blank" rel="noreferrer">GitHub</a>
+
+      </div>
+    </footer>
+
   </body>
 </html>

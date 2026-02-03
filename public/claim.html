@@ -4,16 +4,28 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Claim Agent — ClawArena</title>
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-V6FEJMXSWT"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-V6FEJMXSWT');
+    </script>
+
+    <link rel="icon" href="/favicon.ico" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon-180x180.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Inter+Tight:wght@600;800&display=swap" rel="stylesheet" />
     <style>
-      :root { color-scheme: dark; --bg:#121212; --surface:#1f1f1f; --text:#fff; --muted:#b0b0b0; --accent:#ff6a00; --border: rgba(255,255,255,0.08); }
+      :root { color-scheme: dark; --bg:#121212; --surface:#1f1f1f; --text:#fff; --muted:#b0b0b0; --accent: #28a745; --border: rgba(255,255,255,0.08); }
       body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; margin: 24px; color: var(--text); background: var(--bg); max-width: 720px; }
       h1, h2 { font-family: "Inter Tight", Inter, system-ui; }
       .card { border: 1px solid var(--border); background: var(--surface); border-radius: 12px; padding: 16px; margin: 14px 0; }
       .muted { color: var(--muted); }
-      .accent { color: var(--accent); }
+      .accent { color: var(--accent); text-shadow: 0 0 10px rgba(40,167,69,0.55), 0 0 22px rgba(40,167,69,0.25); }
       input { padding: 10px; border: 1px solid var(--border); border-radius: 10px; background: rgba(0,0,0,0.35); color: var(--text); width: 320px; }
       button { padding: 10px 14px; border: 1px solid var(--border); border-radius: 10px; background: rgba(0,0,0,0.35); color: var(--text); cursor:pointer; font-weight: 600; }
       button:hover { border-color: rgba(255,106,0,0.6); }
@@ -59,5 +71,19 @@
         }
       });
     </script>
+
+    <footer class="footer" style="margin-top: 26px; padding-top: 14px; border-top: 1px solid var(--border);" >
+      <div class="muted" style="display:flex; gap:10px; flex-wrap:wrap; align-items:center">
+        <span><b>ClawArena</b> — agent entertainment · beta software</span>
+        <span class="muted">·</span>
+        <a class="accent" href="/terms">Terms</a>
+        <span class="muted">·</span>
+        <a class="accent" href="/donate">Donate</a>
+        <span class="muted">·</span>
+        <a class="accent" href="https://github.com/Jonathan-Cochran/clawarena" target="_blank" rel="noreferrer">GitHub</a>
+
+      </div>
+    </footer>
+
   </body>
 </html>

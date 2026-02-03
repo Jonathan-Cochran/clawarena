@@ -6,17 +6,38 @@ function must(name: string) {
   return v;
 }
 
-// Runtime connection (pooled) — good for Vercel/serverless.
-const connectionString = process.env.DATABASE_URL ?? process.env.POSTGRES_URL;
+// Runtime connection.
+// NOTE: Supabase pooler URLs can fail TLS verification in some serverless environments.
+// Prefer NON_POOLING when available; it is stable for our low-traffic v1.
+const connectionString =
+  process.env.DATABASE_URL_NON_POOLING ??
+  process.env.POSTGRES_URL_NON_POOLING ??
+  process.env.DATABASE_URL ??
+  process.env.POSTGRES_URL;
 if (!connectionString) {
   // Don't throw immediately at import time in case some scripts set env later.
   // But most paths will require DB.
 }
 
+function poolConfigFromUrl(cs?: string) {
+  if (!cs) return {};
+  const u = new URL(cs);
+  const port = u.port ? Number(u.port) : 5432;
+  const cfg: pg.PoolConfig = {
+    host: u.hostname,
+    port,
+    user: decodeURIComponent(u.username),
+    password: decodeURIComponent(u.password),
+    database: u.pathname.replace(/^\//, '') || 'postgres',
+    // In most managed Postgres environments, TLS is required.
+    // Force node to not validate chain (Supabase pooler sometimes trips this in serverless).
+    ssl: { rejectUnauthorized: false }
+  };
+  return cfg;
+}
+
 export const pool = new pg.Pool({
-  connectionString: connectionString ?? undefined,
-  // In most managed Postgres environments, TLS is required.
-  ssl: { rejectUnauthorized: false },
+  ...poolConfigFromUrl(connectionString ?? undefined),
   max: 5,
   connectionTimeoutMillis: 4000,
   idleTimeoutMillis: 10000
