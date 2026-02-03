@@ -297,6 +297,14 @@ export async function getStats() {
   };
 }
 
+export async function listAgents(params?: { limit?: number }) {
+  const limit = params?.limit ?? 200;
+  const r = await sql<{ id: string; name: string; status: string; created_at: string }>(
+    `select id, name, status, created_at from public.agents order by created_at desc limit ${limit}`
+  );
+  return r.rows.map((a) => ({ id: a.id, name: a.name, status: a.status, createdAt: a.created_at }));
+}
+
 export async function countRunsForAgentSince(agentId: string, sinceIso: string) {
   const r = await sql<{ c: string }>(
     `select count(*)::text as c from public.runs where agent_id=$1 and created_at >= $2`,

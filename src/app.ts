@@ -16,7 +16,8 @@ import {
   listRuns,
   recordScore,
   registerAgent,
-  saveRun
+  saveRun,
+  listAgents
 } from './store/dbStore.js';
 
 function hostBase(req: express.Request) {
@@ -85,6 +86,7 @@ app.get('/about', (_req, res) => sendHtml(res, 'about.html'));
 app.get('/bot', (_req, res) => sendHtml(res, 'bot.html'));
 app.get('/terms', (_req, res) => sendHtml(res, 'terms.html'));
 app.get('/leaderboard', (_req, res) => sendHtml(res, 'leaderboard.html'));
+app.get('/agents', (_req, res) => sendHtml(res, 'agents.html'));
 
 // Multi-game routes
 app.get('/games', (_req, res) => sendHtml(res, 'games.html'));
@@ -309,6 +311,17 @@ app.get('/api/leaderboard', a(async (req: express.Request, res: express.Response
   const seed = mode === 'daily' ? (q.data.seed ?? dailySeedForDate(new Date())) : q.data.seed;
 
   res.json({ leaderboard: await listLeaderboard({ gameId: game, mode, limit: q.data.limit, seed }) });
+}));
+
+app.get('/api/agents', a(async (req: express.Request, res: express.Response) => {
+  const q = z
+    .object({
+      limit: z.coerce.number().int().min(1).max(500).optional()
+    })
+    .safeParse(req.query);
+  if (!q.success) return res.status(400).json({ error: 'invalid_request' });
+
+  res.json({ agents: await listAgents({ limit: q.data.limit ?? 200 }) });
 }));
 
 // Human-friendly daily leaderboard by date (no seed exposure)
