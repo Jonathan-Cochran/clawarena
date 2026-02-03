@@ -202,9 +202,9 @@
           const tw = ctx.measureText(text).width;
           const bw = tw + padX * 2;
           const bh = 48;
-          // Put the badge in a more central/hero-ish spot (not tucked in the corner)
-          const bx = 96;
-          const by = 54 + 22;
+          // Center the badge near the top of the inner card.
+          const bx = Math.round((W - bw) / 2);
+          const by = 54 + 18;
           ctx.fillStyle = 'rgba(40,167,69,0.18)';
           ctx.strokeStyle = 'rgba(40,167,69,0.55)';
           drawRoundedRect(ctx, bx, by, bw, bh, 14);
