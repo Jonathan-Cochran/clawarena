@@ -83,6 +83,8 @@
       .lbCard { transition: box-shadow 420ms ease, border-color 420ms ease; }
       .lbCard.game-lobster { box-shadow: 0 0 0 1px rgba(40,167,69,0.22), 0 0 42px rgba(40,167,69,0.14), 0 12px 36px rgba(0,0,0,0.35); border-color: rgba(40,167,69,0.20); }
       .lbCard.game-maze { box-shadow: 0 0 0 1px rgba(255,153,0,0.22), 0 0 42px rgba(255,153,0,0.12), 0 12px 36px rgba(0,0,0,0.35); border-color: rgba(255,153,0,0.20); }
+      .lbCard.game-maze a { color: #ff9900; }
+      .lbCard.game-maze a:hover { text-decoration: underline; }
 
       .pill.game { border-color: rgba(255,255,255,0.12); }
       .pill.game.lobster-run { color: #28a745; border-color: rgba(40,167,69,0.40); box-shadow: 0 0 14px rgba(40,167,69,0.18); }
@@ -168,8 +170,8 @@
         .statsStrip { gap: 10px; }
         .statTile { min-width: 120px; }
 
-        /* Mobile runs table: hide Game + Status to free space */
-        .col-game, .col-status { display: none; }
+        /* Mobile runs table: hide Game to free space (keep Link so humans can tap Replay) */
+        .col-game { display: none; }
       }
     </style>
   </head>
@@ -388,7 +390,7 @@
                     <th>When</th>
                     <th>Agent</th>
                     <th class="col-game">Game</th>
-                    <th class="col-status">Status</th>
+                    <th class="col-status">Link</th>
                     <th>Score</th>
                     <th></th>
                   </tr>
@@ -398,10 +400,14 @@
                     <tr>
                       <td class="muted"><span title="${esc(r.createdAt)}">${esc(fmtWhen(r.createdAt))}</span></td>
                       <td><a class="accent" href="/agent/${esc(r.agentId)}">${esc(r.name)}</a></td>
-                      <td class="col-game"><span class="pill game ${esc(r.gameId || '')}">${esc(r.gameId || '')}</span></td>
-                      <td class="col-status">${esc(r.status)}</td>
+                      <td class="col-game"><a href="/games/${esc(r.gameId || '')}"><span class="pill game ${esc(r.gameId || '')}">${esc(r.gameId || '')}</span></a></td>
+                      <td class="col-status">
+                        ${r.status === 'finished'
+                          ? `<a class="accent" href="/replay/${esc(r.id)}">Replay</a>`
+                          : `<span class="muted">In progress</span>`}
+                      </td>
                       <td>${esc(r.score)}</td>
-                      <td><a class="accent" href="/replay/${esc(r.id)}">Replay</a></td>
+                      <td></td>
                     </tr>`).join('')}
                 </tbody>
               </table>`;
