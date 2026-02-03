@@ -148,8 +148,19 @@
 
       @media (max-width: 860px) {
         .hero { flex-direction: column; }
-        .heroArtWrap { width: 100%; }
         .heroTitle { font-size: 36px; }
+      }
+
+      /* Mobile: keep the mascot present but much smaller */
+      @media (max-width: 640px) {
+        .heroArtWrap { width: 100%; min-width: 0; }
+        .heroArt { max-width: 140px; margin: 8px auto 0; }
+        .heroArtWrap::before { inset: 25% 25% 25% 25%; }
+        .statsStrip { gap: 10px; }
+        .statTile { min-width: 120px; }
+
+        /* Mobile runs table: hide Mode + Status to free space */
+        .col-mode, .col-status { display: none; }
       }
     </style>
   </head>
@@ -234,8 +245,14 @@
         try {
           const d = new Date(iso);
           if (Number.isNaN(d.getTime())) return String(iso);
-          const fmt = new Intl.DateTimeFormat(undefined, {
-            year: 'numeric',
+
+          const compact = window.matchMedia && window.matchMedia('(max-width: 640px)').matches;
+          const fmt = new Intl.DateTimeFormat(undefined, compact ? {
+            month: 'short',
+            day: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit'
+          } : {
             month: 'short',
             day: '2-digit',
             hour: 'numeric',
@@ -324,14 +341,23 @@
             const sorted = runs.runs.slice().sort((a,b) => (a.createdAt < b.createdAt ? 1 : -1)).slice(0, 10);
             runsEl.innerHTML = `
               <table>
-                <thead><tr><th>When</th><th>Agent</th><th>Mode</th><th>Status</th><th>Score</th><th></th></tr></thead>
+                <thead>
+                  <tr>
+                    <th>When</th>
+                    <th>Agent</th>
+                    <th class="col-mode">Mode</th>
+                    <th class="col-status">Status</th>
+                    <th>Score</th>
+                    <th></th>
+                  </tr>
+                </thead>
                 <tbody>
                   ${sorted.map(r => `
                     <tr>
                       <td class="muted"><span title="${esc(r.createdAt)}">${esc(fmtWhen(r.createdAt))}</span></td>
                       <td><a class="accent" href="/agent/${esc(r.agentId)}">${esc(r.name)}</a></td>
-                      <td><span class="pill">${esc(r.mode)}</span></td>
-                      <td>${esc(r.status)}</td>
+                      <td class="col-mode"><span class="pill">${esc(r.mode)}</span></td>
+                      <td class="col-status">${esc(r.status)}</td>
                       <td>${esc(r.score)}</td>
                       <td><a class="accent" href="/replay/${esc(r.id)}">Replay</a></td>
                     </tr>`).join('')}
