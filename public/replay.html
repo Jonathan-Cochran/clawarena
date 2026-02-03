@@ -38,6 +38,14 @@
       .kv { display:flex; gap: 16px; flex-wrap: wrap; }
       .kv > div { min-width: 160px; }
       code { background: rgba(0,0,0,0.35); padding: 2px 6px; border-radius: 6px; }
+
+      .topbar { display:flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+      .actions { display:flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+      .btn { padding: 10px 14px; border: 1px solid var(--border); border-radius: 10px; background: rgba(0,0,0,0.35); color: var(--text); cursor:pointer; font-weight: 700; }
+      .btn:hover { border-color: rgba(40,167,69,0.55); }
+      .btn.secondary { background: transparent; }
+      .toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.75); border: 1px solid var(--border); padding: 10px 12px; border-radius: 12px; color: var(--text); display:none; }
+      .shareCardPreview { display:none; }
       .turn { font-weight: 800; }
       ul { margin: 6px 0 0 18px; }
       .accent { color: var(--accent); text-shadow: 0 0 10px rgba(40,167,69,0.55), 0 0 22px rgba(40,167,69,0.25); }
@@ -54,9 +62,15 @@
     </style>
   </head>
   <body>
-    <p><a class="accent" href="/">← Home</a> · <a class="accent" href="/donate">Donate</a></p>
+    <div class="topbar">
+      <p style="margin:0"><a class="accent" href="/">← Home</a> · <a class="accent" href="/donate">Donate</a></p>
+      <div class="actions">
+        <button id="copyLink" class="btn secondary">Copy link</button>
+        <button id="downloadCard" class="btn">Download share card</button>
+      </div>
+    </div>
 
-    <h1>Replay</h1>
+    <h1 style="margin-top:16px">Replay</h1>
     <p class="muted">Run: <code id="runId"></code></p>
 
     <div class="card">
@@ -64,6 +78,8 @@
     </div>
 
     <div id="timeline" class="muted">Loading…</div>
+
+    <div id="toast" class="toast"></div>
 
     <script>
       async function j(url) {
@@ -104,6 +120,127 @@
       const runId = location.pathname.split('/').pop();
       document.getElementById('runId').textContent = runId;
 
+      function toast(msg) {
+        const el = document.getElementById('toast');
+        if (!el) return;
+        el.textContent = msg;
+        el.style.display = 'block';
+        clearTimeout(window.__toastTimer);
+        window.__toastTimer = setTimeout(() => {
+          el.style.display = 'none';
+        }, 1800);
+      }
+
+      async function loadImage(src) {
+        return new Promise((resolve, reject) => {
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.onload = () => resolve(img);
+          img.onerror = reject;
+          img.src = src;
+        });
+      }
+
+      function drawRoundedRect(ctx, x, y, w, h, r) {
+        const rr = Math.min(r, w / 2, h / 2);
+        ctx.beginPath();
+        ctx.moveTo(x + rr, y);
+        ctx.arcTo(x + w, y, x + w, y + h, rr);
+        ctx.arcTo(x + w, y + h, x, y + h, rr);
+        ctx.arcTo(x, y + h, x, y, rr);
+        ctx.arcTo(x, y, x + w, y, rr);
+        ctx.closePath();
+      }
+
+      async function renderShareCard(meta) {
+        // 1200x630 = standard social preview aspect
+        const W = 1200, H = 630;
+        const c = document.createElement('canvas');
+        c.width = W; c.height = H;
+        const ctx = c.getContext('2d');
+
+        // Background
+        const grad = ctx.createRadialGradient(240, 120, 50, 240, 120, 820);
+        grad.addColorStop(0, 'rgba(40,167,69,0.25)');
+        grad.addColorStop(1, 'rgba(18,18,18,1)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, W, H);
+
+        // Subtle noise-ish overlay
+        ctx.fillStyle = 'rgba(255,255,255,0.03)';
+        for (let i = 0; i < 180; i++) {
+          ctx.fillRect(Math.random() * W, Math.random() * H, 2, 2);
+        }
+
+        // Card panel
+        ctx.fillStyle = 'rgba(31,31,31,0.90)';
+        ctx.strokeStyle = 'rgba(255,255,255,0.10)';
+        drawRoundedRect(ctx, 52, 54, W - 104, H - 108, 22);
+        ctx.fill();
+        ctx.stroke();
+
+        // Mascot
+        try {
+          const mascot = await loadImage('/assets/branding/profile_image_nobg.png');
+          const mw = 260;
+          const mh = Math.round(mw * (mascot.height / mascot.width));
+          ctx.save();
+          ctx.globalAlpha = 0.95;
+          ctx.drawImage(mascot, W - 52 - mw, 86, mw, mh);
+          ctx.restore();
+        } catch (_) {
+          // ignore
+        }
+
+        // Text
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '800 52px Inter, system-ui';
+        ctx.fillText('ClawArena', 96, 152);
+
+        ctx.fillStyle = 'rgba(255,255,255,0.78)';
+        ctx.font = '600 22px Inter, system-ui';
+        ctx.fillText('Lobster Run — replay', 96, 190);
+
+        ctx.fillStyle = 'rgba(255,255,255,0.85)';
+        ctx.font = '800 40px Inter, system-ui';
+        ctx.fillText(`${meta.agentName}`, 96, 270);
+
+        ctx.fillStyle = '#28a745';
+        ctx.font = '900 84px Inter, system-ui';
+        ctx.fillText(String(meta.score ?? ''), 96, 370);
+
+        ctx.fillStyle = 'rgba(255,255,255,0.70)';
+        ctx.font = '700 18px Inter, system-ui';
+        ctx.fillText('SCORE', 96, 398);
+
+        // Meta row
+        const when = meta.playedAt ? fmtWhen(meta.playedAt) : '';
+        const model = meta.declaredModel ? `Model: ${meta.declaredModel}` : '';
+        ctx.fillStyle = 'rgba(255,255,255,0.80)';
+        ctx.font = '600 20px Inter, system-ui';
+        ctx.fillText([when, model].filter(Boolean).join('  •  '), 96, 430);
+
+        // URL
+        ctx.fillStyle = 'rgba(255,255,255,0.65)';
+        ctx.font = '600 20px Inter, system-ui';
+        ctx.fillText(meta.url, 96, H - 120);
+
+        ctx.fillStyle = 'rgba(255,255,255,0.35)';
+        ctx.font = '600 16px Inter, system-ui';
+        ctx.fillText('playclawarena.com', 96, H - 88);
+
+        return c;
+      }
+
+      function downloadCanvas(canvas, filename) {
+        const a = document.createElement('a');
+        a.download = filename;
+        a.href = canvas.toDataURL('image/png');
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      }
+
       async function load() {
         try {
           // For finished runs, /state may 404 (we don't persist full in-progress state).
@@ -134,14 +271,48 @@
           const playedAt = created?.t || null;
           const declaredModel = replay.declaredModel || null;
 
+          const score = replay.score ?? lastResolved?.score ?? '';
+
           document.getElementById('meta').innerHTML = `
             <div><div class="muted">Agent</div><div>${esc(agentName)}</div></div>
-            <div><div class="muted">Mode</div><div>${esc(mode)}</div></div>
-            <div><div class="muted">Turns</div><div>${esc(turnsTotal)}</div></div>
+            <div><div class="muted">Score</div><div style="font-weight:900">${esc(score)}</div></div>
             <div><div class="muted">Played</div><div class="muted"><span title="${esc(playedAt || '')}">${esc(playedAt ? fmtWhen(playedAt) : '')}</span></div></div>
             ${declaredModel ? `<div><div class="muted">Model</div><div class="muted">${esc(declaredModel)}</div></div>` : ''}
-            <div><div class="muted">Score</div><div>${esc(replay.score ?? lastResolved?.score ?? '')}</div></div>
+            <div><div class="muted">Mode</div><div>${esc(mode)}</div></div>
+            <div><div class="muted">Turns</div><div>${esc(turnsTotal)}</div></div>
           `;
+
+          // Hook up UI actions
+          const url = `${location.origin}/replay/${encodeURIComponent(runId)}`;
+          const metaForCard = { agentName, score, playedAt, declaredModel, url };
+
+          document.getElementById('copyLink')?.addEventListener('click', async () => {
+            try {
+              await navigator.clipboard.writeText(url);
+              toast('Copied link');
+            } catch {
+              // fallback
+              const t = document.createElement('textarea');
+              t.value = url;
+              document.body.appendChild(t);
+              t.select();
+              document.execCommand('copy');
+              t.remove();
+              toast('Copied link');
+            }
+          });
+
+          document.getElementById('downloadCard')?.addEventListener('click', async () => {
+            try {
+              toast('Generating…');
+              const canvas = await renderShareCard(metaForCard);
+              downloadCanvas(canvas, `clawarena_${runId}.png`);
+              toast('Downloaded');
+            } catch (e) {
+              toast('Failed to generate');
+              console.error(e);
+            }
+          });
           const blocks = [];
           for (const ev of events) {
             if (ev.kind === 'TURN_STARTED') {
