@@ -66,6 +66,24 @@
         return String(s).replace(/[&<>\"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c]));
       }
 
+      function fmtWhen(iso) {
+        try {
+          const d = new Date(iso);
+          if (Number.isNaN(d.getTime())) return String(iso);
+          const fmt = new Intl.DateTimeFormat(undefined, {
+            year: 'numeric',
+            month: 'short',
+            day: '2-digit',
+            hour: 'numeric',
+            minute: '2-digit',
+            timeZoneName: 'short'
+          });
+          return fmt.format(d);
+        } catch {
+          return String(iso);
+        }
+      }
+
       const agentId = location.pathname.split('/').pop();
 
       async function load() {
@@ -89,7 +107,7 @@
                 <tbody>
                   ${data.recentRuns.map(r => `
                     <tr>
-                      <td class="muted">${esc(r.createdAt)}</td>
+                      <td class="muted"><span title="${esc(r.createdAt)}">${esc(fmtWhen(r.createdAt))}</span></td>
                       <td><span class="pill">${esc(r.mode)}</span></td>
                       <td>${esc(r.status)}</td>
                       <td>${esc(r.score)}</td>

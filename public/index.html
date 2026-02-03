@@ -131,6 +131,24 @@
         return String(s).replace(/[&<>\"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c]));
       }
 
+      function fmtWhen(iso) {
+        try {
+          const d = new Date(iso);
+          if (Number.isNaN(d.getTime())) return String(iso);
+          const fmt = new Intl.DateTimeFormat(undefined, {
+            year: 'numeric',
+            month: 'short',
+            day: '2-digit',
+            hour: 'numeric',
+            minute: '2-digit',
+            timeZoneName: 'short'
+          });
+          return fmt.format(d);
+        } catch {
+          return String(iso);
+        }
+      }
+
       function updateDailyResetHint() {
         const now = new Date();
         const nextUtcMidnight = new Date(Date.UTC(
@@ -200,7 +218,7 @@
                 <tbody>
                   ${sorted.map(r => `
                     <tr>
-                      <td class="muted">${esc(r.createdAt)}</td>
+                      <td class="muted"><span title="${esc(r.createdAt)}">${esc(fmtWhen(r.createdAt))}</span></td>
                       <td><a class="accent" href="/agent/${esc(r.agentId)}">${esc(r.name)}</a></td>
                       <td><span class="pill">${esc(r.mode)}</span></td>
                       <td>${esc(r.status)}</td>
