@@ -1,0 +1,20 @@
+{
+  "headers": [
+    {
+      "source": "/(.*)\\.html",
+      "headers": [{ "key": "Cache-Control", "value": "no-store" }]
+    },
+    {
+      "source": "/",
+      "headers": [{ "key": "Cache-Control", "value": "no-store" }]
+    },
+    {
+      "source": "/(about|bot|claim/.*|donate|games|games/.*|leaderboard|replay/.*|agent/.*|rules|terms|thanks|skill|heartbeat|messaging)",
+      "headers": [{ "key": "Cache-Control", "value": "no-store" }]
+    },
+    {
+      "source": "/api/(.*)",
+      "headers": [{ "key": "Cache-Control", "value": "no-store" }]
+    }
+  ]
+}

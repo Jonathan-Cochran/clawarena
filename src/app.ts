@@ -56,19 +56,40 @@ const a = (fn: any) => (req: any, res: any, next: any) => Promise.resolve(fn(req
 
 // Serve the tiny UI from /public (works locally and on Vercel Express runtime)
 const PUBLIC_DIR = path.join(process.cwd(), 'public');
-app.use(express.static(PUBLIC_DIR));
 
-app.get('/donate', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'donate.html')));
-app.get('/thanks', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'thanks.html')));
-app.get('/about', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'about.html')));
-app.get('/bot', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'bot.html')));
-app.get('/terms', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'terms.html')));
-app.get('/leaderboard', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'leaderboard.html')));
+// Reduce "Shift+Refresh" pain:
+// - HTML should be revalidated on each request (deploys update quickly)
+// - fingerprintless static assets can be cached longer (we don't have hashed filenames yet)
+app.use(
+  express.static(PUBLIC_DIR, {
+    setHeaders(res, filePath) {
+      if (filePath.endsWith('.html')) {
+        // Always fetch latest HTML (prevents stale pages after deploys).
+        res.setHeader('Cache-Control', 'no-store');
+      } else if (/(?:\.png|\.jpg|\.jpeg|\.gif|\.webp|\.svg|\.ico)$/.test(filePath)) {
+        // Cache images for a bit; safe enough and reduces load.
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+      }
+    }
+  })
+);
+
+function sendHtml(res: express.Response, file: string) {
+  res.setHeader('Cache-Control', 'no-store');
+  return res.sendFile(path.join(PUBLIC_DIR, file));
+}
+
+app.get('/donate', (_req, res) => sendHtml(res, 'donate.html'));
+app.get('/thanks', (_req, res) => sendHtml(res, 'thanks.html'));
+app.get('/about', (_req, res) => sendHtml(res, 'about.html'));
+app.get('/bot', (_req, res) => sendHtml(res, 'bot.html'));
+app.get('/terms', (_req, res) => sendHtml(res, 'terms.html'));
+app.get('/leaderboard', (_req, res) => sendHtml(res, 'leaderboard.html'));
 
 // Multi-game routes
-app.get('/games', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'games.html')));
-app.get('/games/lobster-run', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'games_lobster_run.html')));
-app.get('/games/lobster-run/rules', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'games_lobster_run_rules.html')));
+app.get('/games', (_req, res) => sendHtml(res, 'games.html'));
+app.get('/games/lobster-run', (_req, res) => sendHtml(res, 'games_lobster_run.html'));
+app.get('/games/lobster-run/rules', (_req, res) => sendHtml(res, 'games_lobster_run_rules.html'));
 
 // Back-compat: /rules points at featured game
 app.get('/rules', (_req, res) => res.redirect(302, '/games/lobster-run/rules'));
@@ -78,9 +99,9 @@ app.get('/skill', (_req, res) => res.redirect(302, '/SKILL.md'));
 app.get('/heartbeat', (_req, res) => res.redirect(302, '/HEARTBEAT.md'));
 app.get('/messaging', (_req, res) => res.redirect(302, '/MESSAGING.md'));
 
-app.get('/claim/:token', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'claim.html')));
-app.get('/agent/:agentId', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'agent.html')));
-app.get('/replay/:runId', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'replay.html')));
+app.get('/claim/:token', (_req, res) => sendHtml(res, 'claim.html'));
+app.get('/agent/:agentId', (_req, res) => sendHtml(res, 'agent.html'));
+app.get('/replay/:runId', (_req, res) => sendHtml(res, 'replay.html'));
 
 app.get('/healthz', (_req, res) => res.json({ ok: true }));
 
