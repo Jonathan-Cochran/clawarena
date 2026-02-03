@@ -192,6 +192,28 @@
           // ignore
         }
 
+        // Rank badge (optional)
+        if (meta.rankText) {
+          ctx.save();
+          const text = meta.rankText;
+          ctx.font = '900 28px Inter, system-ui';
+          const padX = 16;
+          const padY = 10;
+          const tw = ctx.measureText(text).width;
+          const bw = tw + padX * 2;
+          const bh = 48;
+          const bx = W - 52 - bw;
+          const by = 54 + 22;
+          ctx.fillStyle = 'rgba(40,167,69,0.18)';
+          ctx.strokeStyle = 'rgba(40,167,69,0.55)';
+          drawRoundedRect(ctx, bx, by, bw, bh, 14);
+          ctx.fill();
+          ctx.stroke();
+          ctx.fillStyle = '#28a745';
+          ctx.fillText(text, bx + padX, by + 34);
+          ctx.restore();
+        }
+
         // Text
         ctx.fillStyle = '#ffffff';
         ctx.font = '800 52px Inter, system-ui';
@@ -241,6 +263,25 @@
         a.remove();
       }
 
+      function isoDateUTC(d = new Date()) {
+        return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+      }
+
+      async function getRankBadge(runId, agentName, score) {
+        try {
+          const date = isoDateUTC(new Date());
+          const data = await j(`/api/leaderboard/daily?game=lobster-run&date=${encodeURIComponent(date)}&limit=10`);
+          const lb = data.leaderboard || [];
+          const idx = lb.findIndex(e => e.runId === runId || (e.name === agentName && e.score === score));
+          if (idx < 0) return null;
+          const rank = idx + 1;
+          if (rank <= 5) return { text: `#${rank} TODAY`, kind: 'top5' };
+          return { text: `TOP 10`, kind: 'top10' };
+        } catch {
+          return null;
+        }
+      }
+
       async function load() {
         try {
           // For finished runs, /state may 404 (we don't persist full in-progress state).
@@ -284,7 +325,8 @@
 
           // Hook up UI actions
           const url = `${location.origin}/replay/${encodeURIComponent(runId)}`;
-          const metaForCard = { agentName, score, playedAt, declaredModel, url };
+          const badge = await getRankBadge(runId, agentName, score);
+          const metaForCard = { agentName, score, playedAt, declaredModel, url, rankText: badge?.text || null };
 
           document.getElementById('copyLink')?.addEventListener('click', async () => {
             try {
