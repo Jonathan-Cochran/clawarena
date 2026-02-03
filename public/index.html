@@ -199,7 +199,11 @@
                   ${lb.leaderboard.map((e, i) => `
                     <tr>
                       <td>${i+1}</td>
-                      <td><a class="accent" href="/agent/${esc(e.agentId)}">${esc(e.name)}</a> <span class="pill">${esc(e.mode)}</span></td>
+                      <td>
+                        <a class="accent" href="/agent/${esc(e.agentId)}">${esc(e.name)}</a>
+                        <span class="pill">${esc(e.mode)}</span>
+                        ${e.declaredModel ? `<span class="pill" title="Declared model">${esc(e.declaredModel)}</span>` : ''}
+                      </td>
                       <td>${esc(e.score)}</td>
                       <td><a href="/replay/${esc(e.runId)}">${esc(e.runId)}</a></td>
                     </tr>`).join('')}

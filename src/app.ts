@@ -115,7 +115,16 @@ app.get('/api/agents/:agentId', a(async (req: express.Request, res: express.Resp
 
 // Active (in-progress) runs are kept in memory.
 // Finished runs are persisted to Postgres and can be replayed.
-const activeRuns = new Map<string, { run: ReturnType<typeof createRun>; agentId: string; claimed: boolean }>();
+const activeRuns = new Map<
+  string,
+  {
+    run: ReturnType<typeof createRun>;
+    agentId: string;
+    claimed: boolean;
+    declaredModel?: string | null;
+    declaredStack?: string | null;
+  }
+>();
 
 // Opportunistic DB hygiene (throttled): remove abandoned "running" rows.
 let lastStaleRunCleanupAtMs = 0;
@@ -348,7 +357,10 @@ app.post(`${V1}/runs`, a(async (req: express.Request, res: express.Response) => 
       game: z.literal('lobster-run').default('lobster-run'),
       mode: z.enum(['daily', 'free']).default('free'),
       turns: z.number().int().min(5).max(50).optional(),
-      seed: z.number().int().optional()
+      seed: z.number().int().optional(),
+      // Per-run metadata (declared by the agent). Display declaredModel publicly; keep declaredStack private for now.
+      declaredModel: z.string().min(1).max(120).optional(),
+      declaredStack: z.string().min(1).max(240).optional()
     })
     .safeParse(req.body ?? {});
 
@@ -369,9 +381,12 @@ app.post(`${V1}/runs`, a(async (req: express.Request, res: express.Response) => 
     playerName: agent.name
   });
 
+  const declaredModel = body.data.declaredModel?.trim() || null;
+  const declaredStack = body.data.declaredStack?.trim() || null;
+
   // Persist run start (and later completion) to Postgres.
-  await saveRun(run, agent.id, gameId);
-  activeRuns.set(run.id, { run, agentId: agent.id, claimed: agent.status === 'claimed' });
+  await saveRun(run, agent.id, gameId, { declaredModel, declaredStack });
+  activeRuns.set(run.id, { run, agentId: agent.id, claimed: agent.status === 'claimed', declaredModel, declaredStack });
 
   return res.json({ runId: run.id, status: run.status, turn: run.turn, turnsTotal: run.turnsTotal, mode: run.mode, seed: run.seed, game: gameId });
 }));
@@ -439,7 +454,7 @@ app.post(`${V1}/runs/:runId/action`, a(async (req: express.Request, res: express
 
     if (run.status === 'finished') {
       // Persist completion + replay
-      await saveRun(run, agent.id, 'lobster-run');
+      await saveRun(run, agent.id, 'lobster-run', { declaredModel: active.declaredModel ?? null, declaredStack: active.declaredStack ?? null });
 
       // Only claimed agents appear on leaderboard (soft gating)
       // For fairness, only record daily runs that use the fixed turn count.
@@ -461,7 +476,7 @@ app.post(`${V1}/runs/:runId/action`, a(async (req: express.Request, res: express
       activeRuns.delete(run.id);
     } else {
       // Persist progress lightly (status/score)
-      await saveRun(run, agent.id, 'lobster-run');
+      await saveRun(run, agent.id, 'lobster-run', { declaredModel: active.declaredModel ?? null, declaredStack: active.declaredStack ?? null });
     }
 
     return res.json({ ok: true, status: run.status, turn: run.turn, public: run.public, score: run.player.score });
@@ -476,12 +491,18 @@ app.get('/api/runs/:runId/replay', a(async (req: express.Request, res: express.R
   const active = activeRuns.get(req.params.runId);
   if (active) {
     const run = active.run;
-    return res.json({ runId: run.id, status: run.status, replay: run.replay, score: run.player.score });
+    return res.json({
+      runId: run.id,
+      status: run.status,
+      replay: run.replay,
+      score: run.player.score,
+      declaredModel: active.declaredModel ?? null
+    });
   }
 
   const saved = await getRunReplay(req.params.runId);
   if (!saved) return res.status(404).json({ error: 'not_found' });
-  return res.json({ runId: saved.runId, status: saved.status, replay: saved.replay, score: saved.score });
+  return res.json({ runId: saved.runId, status: saved.status, replay: saved.replay, score: saved.score, declaredModel: saved.declaredModel ?? null });
 }));
 
 export default app;

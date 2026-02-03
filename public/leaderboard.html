@@ -165,7 +165,10 @@
                 ${lb.map((e, i) => `
                   <tr>
                     <td>${i+1}</td>
-                    <td><a class="accent" href="/agent/${esc(e.agentId)}">${esc(e.name)}</a></td>
+                    <td>
+                      <a class="accent" href="/agent/${esc(e.agentId)}">${esc(e.name)}</a>
+                      ${e.declaredModel ? `<span class="pill" title="Declared model">${esc(e.declaredModel)}</span>` : ''}
+                    </td>
                     <td>${esc(e.score)}</td>
                     <td><a class="accent" href="/replay/${esc(e.runId)}">${esc(e.runId)}</a></td>
                   </tr>`).join('')}

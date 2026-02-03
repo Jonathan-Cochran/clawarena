@@ -101,38 +101,61 @@ export async function updateAgentDescription(agentId: string, description: strin
   return r.rows[0] ?? null;
 }
 
-export async function saveRun(state: RunState, agentId: string, gameId: string) {
+export async function saveRun(
+  state: RunState,
+  agentId: string,
+  gameId: string,
+  meta?: { declaredModel?: string | null; declaredStack?: string | null }
+) {
   // Upsert run record. We persist the replay_json only when finished to reduce writes.
   const replayJson = state.status === 'finished' ? JSON.stringify(state.replay) : null;
   const finishedAt = state.status === 'finished' ? new Date().toISOString() : null;
 
   await sql(
-    `insert into public.runs (id, agent_id, game_id, mode, seed, turns_total, status, score, created_at, finished_at, replay_json)
-     values ($1,$2,$3,$4,$5,$6,$7,$8, now(), $9, $10)
+    `insert into public.runs (id, agent_id, game_id, mode, seed, turns_total, status, score, created_at, finished_at, replay_json, declared_model, declared_stack)
+     values ($1,$2,$3,$4,$5,$6,$7,$8, now(), $9, $10, $11, $12)
      on conflict (id) do update set
        game_id = excluded.game_id,
        status = excluded.status,
        score = excluded.score,
        finished_at = coalesce(excluded.finished_at, public.runs.finished_at),
-       replay_json = coalesce(excluded.replay_json, public.runs.replay_json)`,
-    [state.id, agentId, gameId, state.mode, state.seed, state.turnsTotal, state.status, state.player.score, finishedAt, replayJson]
+       replay_json = coalesce(excluded.replay_json, public.runs.replay_json),
+       declared_model = coalesce(public.runs.declared_model, excluded.declared_model),
+       declared_stack = coalesce(public.runs.declared_stack, excluded.declared_stack)`,
+    [
+      state.id,
+      agentId,
+      gameId,
+      state.mode,
+      state.seed,
+      state.turnsTotal,
+      state.status,
+      state.player.score,
+      finishedAt,
+      replayJson,
+      meta?.declaredModel ?? null,
+      meta?.declaredStack ?? null
+    ]
   );
 }
 
-export async function getRunReplay(id: RunId): Promise<{ runId: string; status: 'running' | 'finished'; score: number; replay: any[] } | null> {
+export async function getRunReplay(
+  id: RunId
+): Promise<{ runId: string; status: 'running' | 'finished'; score: number; replay: any[]; declaredModel?: string | null } | null> {
   const r = await sql<{
     id: string;
     status: 'running' | 'finished';
     score: number;
     replay_json: any;
+    declared_model: string | null;
   }>(
-    `select id, status, score, replay_json from public.runs where id=$1 limit 1`,
+    `select id, status, score, replay_json, declared_model from public.runs where id=$1 limit 1`,
     [id]
   );
   const row = r.rows[0];
   if (!row) return null;
-  const replay = Array.isArray(row.replay_json) ? row.replay_json : (row.replay_json ? JSON.parse(row.replay_json) : []);
-  return { runId: row.id, status: row.status, score: row.score, replay };
+  const replay = Array.isArray(row.replay_json) ? row.replay_json : row.replay_json ? JSON.parse(row.replay_json) : [];
+  return { runId: row.id, status: row.status, score: row.score, replay, declaredModel: row.declared_model };
 }
 
 export async function recordScore(entry: LeaderboardEntry, agentId: string, gameId: string) {
@@ -169,16 +192,26 @@ export async function listLeaderboard(filter?: {
 
   const whereSql = where.length ? `where ${where.join(' and ')}` : '';
 
-  const r = await sql<{ agent_id: string; name: string; score: number; seed: string; mode: 'daily' | 'free'; run_id: string }>(
+  const r = await sql<{
+    agent_id: string;
+    name: string;
+    score: number;
+    seed: string;
+    mode: 'daily' | 'free';
+    run_id: string;
+    declared_model: string | null;
+  }>(
     `select distinct on (l.agent_id)
         l.agent_id,
         a.name,
         l.score,
         l.seed,
         l.mode,
-        l.run_id
+        l.run_id,
+        r.declared_model
      from public.leaderboard_entries l
      join public.agents a on a.id = l.agent_id
+     join public.runs r on r.id = l.run_id
      ${whereSql}
      order by l.agent_id, l.score desc, l.created_at desc
      limit ${limit}`,
@@ -193,7 +226,8 @@ export async function listLeaderboard(filter?: {
       name: row.name,
       score: row.score,
       seed: Number(row.seed),
-      mode: row.mode
+      mode: row.mode,
+      declaredModel: row.declared_model
     }))
     .sort((a, b) => b.score - a.score)
     .slice(0, limit);
