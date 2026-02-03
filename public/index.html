@@ -289,10 +289,10 @@
           // Stats card removed from homepage; hero tiles are the primary stats display.
 
 
-          const highEl = document.getElementById('statHigh');
-          if (highEl) {
+          const highEl2 = document.getElementById('statHigh');
+          if (highEl2) {
             const top = lb.leaderboard?.[0];
-            highEl.textContent = top?.score != null ? String(top.score) : '—';
+            highEl2.textContent = top?.score != null ? String(top.score) : '—';
           }
 
           const lbEl = document.getElementById('lb');
