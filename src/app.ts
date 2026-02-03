@@ -435,11 +435,54 @@ app.get(`${V1}/runs/:runId/state`, a(async (req: express.Request, res: express.R
   if (!active) return res.status(404).json({ error: 'not_found' });
 
   const run = active.run;
+
+  if (active.gameId === 'maze-runner') {
+    // Corn-maze vibe: do NOT reveal full grid or exit location.
+    // Provide local percepts so agents can navigate without brute-forcing moves.
+    const grid = run.public?.grid;
+    const x = run.player?.x;
+    const y = run.player?.y;
+
+    const isWall = (xx: number, yy: number) => {
+      if (!grid) return false;
+      const row = grid[yy];
+      if (!row) return true;
+      const ch = row[xx];
+      return ch === '#';
+    };
+
+    return res.json({
+      run: { id: run.id, status: run.status, turn: run.turn, turnsTotal: run.turnsTotal, mode: run.mode, game: active.gameId },
+      public: {
+        turn: run.public.turn,
+        turnsTotal: run.public.turnsTotal,
+        width: run.public.width,
+        height: run.public.height
+      },
+      you: {
+        name: run.player.name,
+        x,
+        y,
+        turnsUsed: run.player.turnsUsed,
+        turnsRemaining: run.player.turnsRemaining,
+        score: run.player.score,
+        result: run.player.result
+      },
+      percepts: {
+        upBlocked: isWall(x, y - 1),
+        downBlocked: isWall(x, y + 1),
+        leftBlocked: isWall(x - 1, y),
+        rightBlocked: isWall(x + 1, y)
+      },
+      legalActions: getLegalMazeActions(run)
+    });
+  }
+
   return res.json({
     run: { id: run.id, status: run.status, turn: run.turn, turnsTotal: run.turnsTotal, mode: run.mode, game: active.gameId },
     public: run.public,
     you: run.player,
-    legalActions: active.gameId === 'lobster-run' ? getLegalLobsterActions(run) : getLegalMazeActions(run)
+    legalActions: getLegalLobsterActions(run)
   });
 }));
 
@@ -524,13 +567,19 @@ app.post(`${V1}/runs/:runId/action`, a(async (req: express.Request, res: express
     }
 
     // For maze runner, include immediate feedback so agents can adapt quickly.
+    // Do NOT reveal exit or full grid.
     if (active.gameId === 'maze-runner') {
       const you = run.player;
       return res.json({
         ok: true,
         status: run.status,
         turn: run.turn,
-        public: run.public,
+        public: {
+          turn: run.public.turn,
+          turnsTotal: run.public.turnsTotal,
+          width: run.public.width,
+          height: run.public.height
+        },
         score: run.player.score,
         you: { x: you.x, y: you.y, turnsUsed: you.turnsUsed, turnsRemaining: you.turnsRemaining, result: you.result }
       });
