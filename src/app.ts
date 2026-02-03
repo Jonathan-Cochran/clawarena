@@ -149,9 +149,16 @@ async function maybeCleanupStaleRunningRuns() {
 
 app.get('/api/runs', a(async (req: express.Request, res: express.Response) => {
   await maybeCleanupStaleRunningRuns();
-  const q = z.object({ game: z.string().optional(), limit: z.coerce.number().int().min(1).max(200).optional() }).safeParse(req.query);
+  const q = z
+    .object({
+      game: z.enum(['lobster-run', 'maze-runner']).optional(),
+      limit: z.coerce.number().int().min(1).max(200).optional()
+    })
+    .safeParse(req.query);
   if (!q.success) return res.status(400).json({ error: 'invalid_request' });
-  res.json({ runs: await listRuns({ gameId: q.data.game ?? 'lobster-run', limit: q.data.limit }) });
+
+  // If no game is provided, return recent runs across all games.
+  res.json({ runs: await listRuns({ gameId: q.data.game, limit: q.data.limit }) });
 }));
 
 // --- API v1 (OpenClaw-friendly)

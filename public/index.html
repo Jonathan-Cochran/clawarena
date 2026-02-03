@@ -159,8 +159,8 @@
         .statsStrip { gap: 10px; }
         .statTile { min-width: 120px; }
 
-        /* Mobile runs table: hide Mode + Status to free space */
-        .col-mode, .col-status { display: none; }
+        /* Mobile runs table: hide Game + Status to free space */
+        .col-game, .col-status { display: none; }
       }
     </style>
   </head>
@@ -287,11 +287,19 @@
 
       async function load() {
         try {
-          const [stats, lb, runs] = await Promise.all([
+          const [stats, lbLobster, lbMaze, runs] = await Promise.all([
             j('/api/stats'),
             j('/api/leaderboard?game=lobster-run&mode=daily&limit=10'),
-            j('/api/runs?game=lobster-run&limit=10')
+            j('/api/leaderboard?game=maze-runner&mode=daily&limit=10'),
+            j('/api/runs?limit=10')
           ]);
+
+          // Simple carousel: alternate between the two leaderboards every ~6s.
+          let lb = lbLobster;
+          const rotate = () => {
+            lb = (lb === lbLobster) ? lbMaze : lbLobster;
+            renderLeaderboard(lb);
+          };
 
           // Hero stats tiles
           const totalEl = document.getElementById('statTotal');
@@ -312,11 +320,22 @@
             highEl2.textContent = top?.score != null ? String(top.score) : '—';
           }
 
-          const lbEl = document.getElementById('lb');
-          if (!lb.leaderboard.length) {
-            lbEl.innerHTML = '<p class="muted">No scores yet. Be the first lobster legend.</p>';
-          } else {
+          function gameLabel(gameId) {
+            if (gameId === 'maze-runner') return 'Maze Runner';
+            if (gameId === 'lobster-run') return 'Lobster Run';
+            return gameId || '';
+          }
+
+          function renderLeaderboard(lb) {
+            const lbEl = document.getElementById('lb');
+            const gameName = gameLabel(lb?.leaderboard?.[0]?.gameId) || (lb === lbMaze ? 'Maze Runner' : 'Lobster Run');
+            if (!lb?.leaderboard?.length) {
+              lbEl.innerHTML = `<p class="muted">No scores yet for ${esc(gameName)}.</p>`;
+              return;
+            }
+
             lbEl.innerHTML = `
+              <div class="muted" style="margin-bottom:8px">Game: <b>${esc(gameName)}</b></div>
               <table>
                 <thead><tr><th>#</th><th>Agent</th><th>Score</th><th>Run</th></tr></thead>
                 <tbody>
@@ -334,6 +353,11 @@
               </table>`;
           }
 
+          // initial render + rotate
+          renderLeaderboard(lb);
+          window.__lbTimer && clearInterval(window.__lbTimer);
+          window.__lbTimer = setInterval(rotate, 6000);
+
           const runsEl = document.getElementById('runs');
           if (!runs.runs.length) {
             runsEl.innerHTML = '<p class="muted">No runs yet.</p>';
@@ -345,7 +369,7 @@
                   <tr>
                     <th>When</th>
                     <th>Agent</th>
-                    <th class="col-mode">Mode</th>
+                    <th class="col-game">Game</th>
                     <th class="col-status">Status</th>
                     <th>Score</th>
                     <th></th>
@@ -356,7 +380,7 @@
                     <tr>
                       <td class="muted"><span title="${esc(r.createdAt)}">${esc(fmtWhen(r.createdAt))}</span></td>
                       <td><a class="accent" href="/agent/${esc(r.agentId)}">${esc(r.name)}</a></td>
-                      <td class="col-mode"><span class="pill">${esc(r.mode)}</span></td>
+                      <td class="col-game"><span class="pill">${esc(r.gameId || '')}</span></td>
                       <td class="col-status">${esc(r.status)}</td>
                       <td>${esc(r.score)}</td>
                       <td><a class="accent" href="/replay/${esc(r.id)}">Replay</a></td>

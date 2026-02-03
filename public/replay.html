@@ -107,6 +107,8 @@
       .chip.fuel { border-color: rgba(0,123,255,0.55); background: rgba(0,123,255,0.10); }
       .chip.ice { border-color: rgba(23,162,184,0.55); background: rgba(23,162,184,0.10); }
       .chip.cap { border-color: rgba(111,66,193,0.55); background: rgba(111,66,193,0.10); }
+      .chip.pos { border-color: rgba(0,123,255,0.55); background: rgba(0,123,255,0.10); }
+      .chip.turns { border-color: rgba(255,193,7,0.55); background: rgba(255,193,7,0.10); }
     </style>
   </head>
   <body>
@@ -661,7 +663,13 @@
             const prevSnap = snapshots.get(it.turn - 1) || null;
             const notes = (resolved?.notes || []).map(n => `<li>${esc(n)}</li>`).join('');
 
-            const snap = resolved ? `<div class="chips">
+            const mazeSnap = resolved ? `<div class="chips">
+              <span class="chip pos"><span class="k">pos</span><span class="v">(${esc(s.x ?? '?')},${esc(s.y ?? '?')})</span><span class="d">${esc(s.moved === false ? 'blocked' : '')}</span></span>
+              <span class="chip turns"><span class="k">turns left</span><span class="v">${esc(s.turnsRemaining ?? '')}</span><span class="d"></span></span>
+              <span class="chip"><span class="k">result</span><span class="v">${esc(s.result ?? '')}</span><span class="d"></span></span>
+            </div>` : '';
+
+            const lobsterSnap = resolved ? `<div class="chips">
               <span class="chip cash"><span class="k">$</span><span class="v">${esc(s.cash ?? '')}</span><span class="d">${esc(deltaChip(prevSnap, s, 'cash'))}</span></span>
               <span class="chip bait"><span class="k">bait</span><span class="v">${esc(s.bait ?? '')}</span><span class="d">${esc(deltaChip(prevSnap, s, 'bait'))}</span></span>
               <span class="chip fuel"><span class="k">fuel</span><span class="v">${esc(s.fuel ?? '')}</span><span class="d">${esc(deltaChip(prevSnap, s, 'fuel'))}</span></span>
@@ -670,17 +678,23 @@
               <span class="chip"><span class="k">lobsters</span><span class="v">${esc(s.lobsters ?? '')}</span><span class="d">${esc(deltaChip(prevSnap, s, 'lobsters'))}</span></span>
             </div>` : '';
 
+            const snap = isMaze ? mazeSnap : lobsterSnap;
+
             const body = resolved ? `<div class="turnBody">
-              <div class="muted" style="margin-top:8px">Result: score ${esc(resolved.score ?? it.score)}</div>
+              <div class="muted" style="margin-top:8px">Result: ${isMaze ? 'turn resolved' : `score ${esc(resolved.score ?? it.score)}`}</div>
               ${snap}
               ${notes ? `<ul>${notes}</ul>` : ''}
             </div>` : `<div class="turnBody"><div class="muted">No resolution recorded.</div></div>`;
+
+            const summaryMeta = isMaze
+              ? `<span class="sumMeta">Pos (${esc(started?.x ?? '?')},${esc(started?.y ?? '?')})</span>`
+              : `<span class="sumMeta">Market ${esc(market)} · Weather ${esc(weather)}</span>`;
 
             return `<details class="turnCard" data-turn="${esc(it.turn)}"${open}>
               <summary>
                 <div class="sumLeft">
                   <span class="sumTurn">Turn ${esc(it.turn)}</span>
-                  <span class="sumMeta">Market ${esc(market)} · Weather ${esc(weather)}</span>
+                  ${summaryMeta}
                   <span class="sumAction">${esc(actionStr)}</span>
                   ${tag}
                 </div>
