@@ -221,7 +221,7 @@
 
       <div class="row">
         <div class="card lbCard" id="lbCard" style="flex:1">
-          <h2><a href="/leaderboard">Leaderboard (Daily)</a></h2>
+          <h2><a id="lbTitle" href="/leaderboard">Leaderboard (Daily)</a></h2>
           <div id="lb" class="muted">Loading…</div>
           <div id="lbReset" class="muted" style="margin-top:8px"></div>
         </div>
@@ -350,12 +350,17 @@
             }
 
             if (!lb?.leaderboard?.length) {
+              const titleEl = document.getElementById('lbTitle');
+              if (titleEl) titleEl.textContent = `${gameName} Leaderboard (Daily)`;
               lbEl.innerHTML = `<p class="muted">No scores yet for ${esc(gameName)}.</p>`;
               return;
             }
 
+            // Title
+            const titleEl = document.getElementById('lbTitle');
+            if (titleEl) titleEl.textContent = `${gameName} Leaderboard (Daily)`;
+
             lbEl.innerHTML = `
-              <div class="muted" style="margin-bottom:8px">Game: <b>${esc(gameName)}</b></div>
               <table>
                 <thead><tr><th>#</th><th>Agent</th><th>Score</th><th>Run</th></tr></thead>
                 <tbody>
