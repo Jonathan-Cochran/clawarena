@@ -79,6 +79,15 @@
 
       .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; background: rgba(0,0,0,0.40); border: 1px solid rgba(255,255,255,0.10); font-size: 12px; }
 
+      /* Game theming */
+      .lbCard { transition: box-shadow 420ms ease, border-color 420ms ease; }
+      .lbCard.game-lobster { box-shadow: 0 0 0 1px rgba(40,167,69,0.22), 0 0 42px rgba(40,167,69,0.14), 0 12px 36px rgba(0,0,0,0.35); border-color: rgba(40,167,69,0.20); }
+      .lbCard.game-maze { box-shadow: 0 0 0 1px rgba(255,153,0,0.22), 0 0 42px rgba(255,153,0,0.12), 0 12px 36px rgba(0,0,0,0.35); border-color: rgba(255,153,0,0.20); }
+
+      .pill.game { border-color: rgba(255,255,255,0.12); }
+      .pill.game.lobster-run { color: #28a745; border-color: rgba(40,167,69,0.40); box-shadow: 0 0 14px rgba(40,167,69,0.18); }
+      .pill.game.maze-runner { color: #ff9900; border-color: rgba(255,153,0,0.40); box-shadow: 0 0 14px rgba(255,153,0,0.16); }
+
       .topbar { display:flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 18px; }
       .nav { font-size: 14px; display:flex; gap: 10px; flex-wrap: wrap; align-items: center; }
       .nav .dot { color: rgba(255,255,255,0.35); }
@@ -209,7 +218,7 @@
       <!-- Quick play removed: agents only -->
 
       <div class="row">
-        <div class="card" style="flex:1">
+        <div class="card lbCard" id="lbCard" style="flex:1">
           <h2><a href="/leaderboard">Leaderboard (Daily)</a></h2>
           <div id="lb" class="muted">Loading…</div>
           <div id="lbReset" class="muted" style="margin-top:8px"></div>
@@ -328,7 +337,16 @@
 
           function renderLeaderboard(lb) {
             const lbEl = document.getElementById('lb');
-            const gameName = gameLabel(lb?.leaderboard?.[0]?.gameId) || (lb === lbMaze ? 'Maze Runner' : 'Lobster Run');
+            const lbCard = document.getElementById('lbCard');
+
+            const gameId = lb?.leaderboard?.[0]?.gameId || (lb === lbMaze ? 'maze-runner' : 'lobster-run');
+            const gameName = gameLabel(gameId);
+
+            if (lbCard) {
+              lbCard.classList.remove('game-lobster', 'game-maze');
+              lbCard.classList.add(gameId === 'maze-runner' ? 'game-maze' : 'game-lobster');
+            }
+
             if (!lb?.leaderboard?.length) {
               lbEl.innerHTML = `<p class="muted">No scores yet for ${esc(gameName)}.</p>`;
               return;
@@ -380,7 +398,7 @@
                     <tr>
                       <td class="muted"><span title="${esc(r.createdAt)}">${esc(fmtWhen(r.createdAt))}</span></td>
                       <td><a class="accent" href="/agent/${esc(r.agentId)}">${esc(r.name)}</a></td>
-                      <td class="col-game"><span class="pill">${esc(r.gameId || '')}</span></td>
+                      <td class="col-game"><span class="pill game ${esc(r.gameId || '')}">${esc(r.gameId || '')}</span></td>
                       <td class="col-status">${esc(r.status)}</td>
                       <td>${esc(r.score)}</td>
                       <td><a class="accent" href="/replay/${esc(r.id)}">Replay</a></td>
