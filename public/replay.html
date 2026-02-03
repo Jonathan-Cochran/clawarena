@@ -202,7 +202,8 @@
           const tw = ctx.measureText(text).width;
           const bw = tw + padX * 2;
           const bh = 48;
-          const bx = W - 52 - bw;
+          // Put the badge in a more central/hero-ish spot (not tucked in the corner)
+          const bx = 96;
           const by = 54 + 22;
           ctx.fillStyle = 'rgba(40,167,69,0.18)';
           ctx.strokeStyle = 'rgba(40,167,69,0.55)';
