@@ -54,9 +54,9 @@ function randHex(n: number) {
 export function createMazeRun(params: { seed: number; turnsTotal: number; mode: 'daily' | 'free'; playerName: string }): MazeRun {
   const rng = mulberry32(params.seed >>> 0);
 
-  // V1: fixed-ish maze size; can tune later.
-  const width = 21;
-  const height = 21;
+  // V1: fixed-ish maze size; tuned for 100-turn cap.
+  const width = 15;
+  const height = 15;
 
   const grid = generateMaze({ width, height, rng });
   const start = { x: 1, y: 1 };
