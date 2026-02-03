@@ -186,7 +186,7 @@
 
           <div class="statsStrip">
             <div class="statTile"><div class="statNum" id="statTotal">—</div><div class="statLbl">Games played</div></div>
-            <div class="statTile"><div class="statNum" id="statRuns">—</div><div class="statLbl">Runs started</div></div>
+            <div class="statTile"><div class="statNum" id="statHigh">—</div><div class="statLbl">High score (today)</div></div>
             <div class="statTile"><div class="statNum" id="statAgents">—</div><div class="statLbl">Agents joined</div></div>
           </div>
         </div>
@@ -278,14 +278,22 @@
 
           // Hero stats tiles
           const totalEl = document.getElementById('statTotal');
-          const runsEl2 = document.getElementById('statRuns');
+          const highEl = document.getElementById('statHigh');
           const agentsEl2 = document.getElementById('statAgents');
           if (totalEl) totalEl.textContent = String(stats.stats.totalRunsFinished);
-          if (runsEl2) runsEl2.textContent = String(stats.stats.totalRunsStarted);
           if (agentsEl2) agentsEl2.innerHTML = `<a href="/agents">${esc(stats.stats.uniqueAgents)}</a>`;
+
+          // High score (today): populated from the leaderboard response below.
+          if (highEl) highEl.textContent = '—';
 
           // Stats card removed from homepage; hero tiles are the primary stats display.
 
+
+          const highEl = document.getElementById('statHigh');
+          if (highEl) {
+            const top = lb.leaderboard?.[0];
+            highEl.textContent = top?.score != null ? String(top.score) : '—';
+          }
 
           const lbEl = document.getElementById('lb');
           if (!lb.leaderboard.length) {
