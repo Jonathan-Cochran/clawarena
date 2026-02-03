@@ -1,7 +1,8 @@
 import path from 'node:path';
 import express from 'express';
 import { z } from 'zod';
-import { createRun, dailySeedForDate, getLegalActions, submitAction } from './game/lobsterRun.js';
+import { createRun as createLobsterRun, dailySeedForDate, getLegalActions as getLegalLobsterActions, submitAction as submitLobsterAction } from './game/lobsterRun.js';
+import { createMazeRun, getLegalMazeActions, submitMazeAction } from './game/mazeRunner.js';
 import {
   claimAgent,
   getAgentByApiKey,
@@ -123,7 +124,8 @@ app.get('/api/agents/:agentId', a(async (req: express.Request, res: express.Resp
 const activeRuns = new Map<
   string,
   {
-    run: ReturnType<typeof createRun>;
+    gameId: 'lobster-run' | 'maze-runner';
+    run: any;
     agentId: string;
     claimed: boolean;
     declaredModel?: string | null;
@@ -370,7 +372,7 @@ app.post(`${V1}/runs`, a(async (req: express.Request, res: express.Response) => 
   // NOTE: daily mode is locked to a fixed turnsTotal for fair leaderboard comparison.
   const body = z
     .object({
-      game: z.literal('lobster-run').default('lobster-run'),
+      game: z.enum(['lobster-run', 'maze-runner']).default('lobster-run'),
       mode: z.enum(['daily', 'free']).default('free'),
       turns: z.number().int().min(5).max(50).optional(),
       seed: z.number().int().optional(),
@@ -392,21 +394,20 @@ app.post(`${V1}/runs`, a(async (req: express.Request, res: express.Response) => 
   const mode = body.data.mode;
   const seed = mode === 'daily' ? dailySeedForDate(new Date()) : body.data.seed;
 
-  const turnsTotal = mode === 'daily' ? 12 : body.data.turns;
-
-  const run = createRun({
-    seed,
-    turnsTotal,
-    mode,
-    playerName: agent.name
-  });
+  // Daily fixed turns for fair comparison.
+  const turnsTotal = mode === 'daily' ? (gameId === 'lobster-run' ? 12 : 100) : body.data.turns;
 
   const declaredModel = body.data.declaredModel?.trim() || null;
   const declaredStack = body.data.declaredStack?.trim() || null;
 
+  const run =
+    gameId === 'lobster-run'
+      ? createLobsterRun({ seed, turnsTotal: turnsTotal ?? 12, mode, playerName: agent.name })
+      : createMazeRun({ seed: seed ?? dailySeedForDate(new Date()), turnsTotal: turnsTotal ?? 100, mode, playerName: agent.name });
+
   // Persist run start (and later completion) to Postgres.
   await saveRun(run, agent.id, gameId, { declaredModel, declaredStack });
-  activeRuns.set(run.id, { run, agentId: agent.id, claimed: agent.status === 'claimed', declaredModel, declaredStack });
+  activeRuns.set(run.id, { gameId, run, agentId: agent.id, claimed: agent.status === 'claimed', declaredModel, declaredStack });
 
   return res.json({ runId: run.id, status: run.status, turn: run.turn, turnsTotal: run.turnsTotal, mode: run.mode, seed: run.seed, game: gameId });
 }));
@@ -427,10 +428,10 @@ app.get(`${V1}/runs/:runId/state`, a(async (req: express.Request, res: express.R
 
   const run = active.run;
   return res.json({
-    run: { id: run.id, status: run.status, turn: run.turn, turnsTotal: run.turnsTotal, mode: run.mode },
+    run: { id: run.id, status: run.status, turn: run.turn, turnsTotal: run.turnsTotal, mode: run.mode, game: active.gameId },
     public: run.public,
     you: run.player,
-    legalActions: getLegalActions(run)
+    legalActions: active.gameId === 'lobster-run' ? getLegalLobsterActions(run) : getLegalMazeActions(run)
   });
 }));
 
@@ -446,39 +447,54 @@ app.post(`${V1}/runs/:runId/action`, a(async (req: express.Request, res: express
   if (!active) return res.status(404).json({ error: 'not_found' });
   const run = active.run;
 
-  const body = z
-    .object({
-      turn: z.number().int(),
-      action: z.discriminatedUnion('type', [
-        z.object({ type: z.literal('FISH_INSHORE') }),
-        z.object({ type: z.literal('FISH_OFFSHORE') }),
-        z.object({ type: z.literal('SELL_ALL') }),
-        z.object({ type: z.literal('SELL'), qty: z.number().int().min(1).max(9999) }),
-        z.object({ type: z.literal('INSURE') }),
-        z.object({ type: z.literal('UPGRADE'), qty: z.number().int().min(1).max(10) }),
-        z.object({
-          type: z.literal('BUY'),
-          item: z.enum(['bait', 'fuel', 'ice']),
-          qty: z.number().int().min(1).max(25)
-        })
-      ])
-    })
-    .safeParse(req.body ?? {});
+  const body =
+    active.gameId === 'lobster-run'
+      ? z
+          .object({
+            turn: z.number().int(),
+            action: z.discriminatedUnion('type', [
+              z.object({ type: z.literal('FISH_INSHORE') }),
+              z.object({ type: z.literal('FISH_OFFSHORE') }),
+              z.object({ type: z.literal('SELL_ALL') }),
+              z.object({ type: z.literal('SELL'), qty: z.number().int().min(1).max(9999) }),
+              z.object({ type: z.literal('INSURE') }),
+              z.object({ type: z.literal('UPGRADE'), qty: z.number().int().min(1).max(10) }),
+              z.object({
+                type: z.literal('BUY'),
+                item: z.enum(['bait', 'fuel', 'ice']),
+                qty: z.number().int().min(1).max(25)
+              })
+            ])
+          })
+          .safeParse(req.body ?? {})
+      : z
+          .object({
+            turn: z.number().int(),
+            action: z.discriminatedUnion('type', [
+              z.object({ type: z.enum(['UP', 'DOWN', 'LEFT', 'RIGHT', 'WAIT']) })
+            ])
+          })
+          .safeParse(req.body ?? {});
 
   if (!body.success) {
     return res.status(400).json({ error: 'invalid_request', details: body.error.flatten() });
   }
 
   try {
-    submitAction(run, body.data.turn, body.data.action);
+    if (active.gameId === 'lobster-run') {
+      submitLobsterAction(run, body.data.turn, body.data.action as any);
+    } else {
+      submitMazeAction(run, body.data.turn, body.data.action as any);
+    }
 
     if (run.status === 'finished') {
       // Persist completion + replay
-      await saveRun(run, agent.id, 'lobster-run', { declaredModel: active.declaredModel ?? null, declaredStack: active.declaredStack ?? null });
+      await saveRun(run, agent.id, active.gameId, { declaredModel: active.declaredModel ?? null, declaredStack: active.declaredStack ?? null });
 
       // Only claimed agents appear on leaderboard (soft gating)
       // For fairness, only record daily runs that use the fixed turn count.
-      if (agent.status === 'claimed' && run.mode === 'daily' && run.turnsTotal === 12) {
+      const fixedTurns = active.gameId === 'lobster-run' ? 12 : 100;
+      if (agent.status === 'claimed' && run.mode === 'daily' && run.turnsTotal === fixedTurns) {
         await recordScore(
           {
             runId: run.id,
@@ -489,14 +505,14 @@ app.post(`${V1}/runs/:runId/action`, a(async (req: express.Request, res: express
             createdAt: run.createdAt
           },
           agent.id,
-          'lobster-run'
+          active.gameId
         );
       }
 
       activeRuns.delete(run.id);
     } else {
       // Persist progress lightly (status/score)
-      await saveRun(run, agent.id, 'lobster-run', { declaredModel: active.declaredModel ?? null, declaredStack: active.declaredStack ?? null });
+      await saveRun(run, agent.id, active.gameId, { declaredModel: active.declaredModel ?? null, declaredStack: active.declaredStack ?? null });
     }
 
     return res.json({ ok: true, status: run.status, turn: run.turn, public: run.public, score: run.player.score });

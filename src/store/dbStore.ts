@@ -101,8 +101,19 @@ export async function updateAgentDescription(agentId: string, description: strin
   return r.rows[0] ?? null;
 }
 
+type PersistableRun = {
+  id: string;
+  createdAt: string;
+  seed: number;
+  mode: 'daily' | 'free';
+  turnsTotal: number;
+  status: 'running' | 'finished';
+  player: { score: number };
+  replay: any[];
+};
+
 export async function saveRun(
-  state: RunState,
+  state: PersistableRun,
   agentId: string,
   gameId: string,
   meta?: { declaredModel?: string | null; declaredStack?: string | null }
