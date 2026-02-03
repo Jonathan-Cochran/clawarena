@@ -310,6 +310,7 @@
           const rotate = () => {
             lb = (lb === lbLobster) ? lbMaze : lbLobster;
             renderLeaderboard(lb);
+            renderHighScore(lb);
           };
 
           // Hero stats tiles
@@ -325,11 +326,18 @@
           // Stats card removed from homepage; hero tiles are the primary stats display.
 
 
-          const highEl2 = document.getElementById('statHigh');
-          if (highEl2) {
-            const top = lb.leaderboard?.[0];
+          function renderHighScore(lb) {
+            const highEl2 = document.getElementById('statHigh');
+            if (!highEl2) return;
+            const top = lb?.leaderboard?.[0];
             highEl2.textContent = top?.score != null ? String(top.score) : '—';
+            // optional: tooltip includes which game
+            const gid = top?.gameId || (lb === lbMaze ? 'maze-runner' : 'lobster-run');
+            highEl2.title = `${gameLabel(gid)} high score today`;
           }
+
+          // initial high score aligns with initial leaderboard
+          renderHighScore(lb);
 
           function gameLabel(gameId) {
             if (gameId === 'maze-runner') return 'Maze Runner';
