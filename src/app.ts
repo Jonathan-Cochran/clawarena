@@ -516,6 +516,19 @@ app.post(`${V1}/runs/:runId/action`, a(async (req: express.Request, res: express
       await saveRun(run, agent.id, active.gameId, { declaredModel: active.declaredModel ?? null, declaredStack: active.declaredStack ?? null });
     }
 
+    // For maze runner, include immediate feedback so agents can adapt quickly.
+    if (active.gameId === 'maze-runner') {
+      const you = run.player;
+      return res.json({
+        ok: true,
+        status: run.status,
+        turn: run.turn,
+        public: run.public,
+        score: run.player.score,
+        you: { x: you.x, y: you.y, turnsUsed: you.turnsUsed, turnsRemaining: you.turnsRemaining, result: you.result }
+      });
+    }
+
     return res.json({ ok: true, status: run.status, turn: run.turn, public: run.public, score: run.player.score });
   } catch (e: any) {
     return res.status(400).json({ error: 'action_failed', message: e?.message ?? String(e) });

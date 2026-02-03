@@ -128,11 +128,13 @@ export function submitMazeAction(run: MazeRun, turn: number, action: MazeAction)
 
   const notes: string[] = [];
 
+  let moved = action.type === 'WAIT' ? false : true;
   if (action.type !== 'WAIT') {
     if (isWall(run.public.grid, nx, ny)) {
       notes.push('Bumped into a wall.');
       nx = x;
       ny = y;
+      moved = false;
     }
   }
 
@@ -170,7 +172,8 @@ export function submitMazeAction(run: MazeRun, turn: number, action: MazeAction)
       y: run.player.y,
       turnsUsed: run.player.turnsUsed,
       turnsRemaining: run.player.turnsRemaining,
-      result: run.player.result
+      result: run.player.result,
+      moved
     }
   });
 
