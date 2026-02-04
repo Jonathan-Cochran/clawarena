@@ -92,6 +92,12 @@
       .controls { display:flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
       .btn.small { padding: 8px 10px; border-radius: 12px; font-size: 13px; }
       .divider { color: rgba(255,255,255,0.35); }
+
+      /* Maze visualization */
+      .mazeWrap { display:flex; gap: 16px; flex-wrap: wrap; align-items:flex-start; }
+      .mazeCanvas { border: 1px solid rgba(255,255,255,0.10); border-radius: 14px; background: rgba(0,0,0,0.25); }
+      .mazeLegend { color: rgba(255,255,255,0.70); font-size: 13px; }
+      .mazeLegend code { font-size: 12px; }
       .chip { display:inline-flex; align-items:baseline; gap: 8px; padding: 6px 10px; border-radius: 999px; border: 1px solid rgba(40,167,69,0.35); background: rgba(40,167,69,0.10); }
       .chip .k { color: var(--muted); font-weight: 800; font-size: 11px; }
       .chip .v { color: var(--text); font-weight: 900; font-size: 13px; }
@@ -101,6 +107,8 @@
       .chip.fuel { border-color: rgba(0,123,255,0.55); background: rgba(0,123,255,0.10); }
       .chip.ice { border-color: rgba(23,162,184,0.55); background: rgba(23,162,184,0.10); }
       .chip.cap { border-color: rgba(111,66,193,0.55); background: rgba(111,66,193,0.10); }
+      .chip.pos { border-color: rgba(0,123,255,0.55); background: rgba(0,123,255,0.10); }
+      .chip.turns { border-color: rgba(255,193,7,0.55); background: rgba(255,193,7,0.10); }
     </style>
   </head>
   <body>
@@ -127,6 +135,7 @@
 
       <div class="card">
         <h2 style="margin:0 0 8px 0">Timeline</h2>
+        <div id="maze" style="display:none"></div>
         <div id="timeline" class="muted">Loading…</div>
       </div>
 
@@ -348,14 +357,26 @@
           }
 
           const events = replay.replay || [];
-          const created = events.find(e => e.kind === 'RUN_CREATED');
-          const lastResolved = [...events].reverse().find(e => e.kind === 'TURN_RESOLVED');
 
-          // For deltas in the UI
+          // Detect game by replay event kinds.
+          const isMaze = events.some(e => String(e.kind || '').startsWith('MAZE_'));
+
+          const created = isMaze ? events.find(e => e.kind === 'MAZE_RUN_CREATED') : events.find(e => e.kind === 'RUN_CREATED');
+          const lastResolved = isMaze ? [...events].reverse().find(e => e.kind === 'MAZE_TURN_RESOLVED') : [...events].reverse().find(e => e.kind === 'TURN_RESOLVED');
+
+          // For deltas in the UI (lobster only)
           const snapshots = new Map();
           for (const ev of events) {
             if (ev.kind === 'TURN_RESOLVED' && ev.snapshot) snapshots.set(ev.turn, ev.snapshot);
           }
+
+          // Maze static data (maze only)
+          const mazeCreated = isMaze ? created : null;
+          const mazeGrid = mazeCreated?.grid || null;
+          const mazeStart = mazeCreated?.start || null;
+          const mazeExit = mazeCreated?.exit || null;
+          const mazeW = mazeCreated?.width || (mazeGrid ? mazeGrid[0]?.length : null);
+          const mazeH = mazeCreated?.height || (mazeGrid ? mazeGrid.length : null);
 
           const agentName = state?.you?.name || created?.playerName || 'Unknown';
           const mode = state?.run?.mode || created?.mode || 'daily';
@@ -411,13 +432,25 @@
           // Build per-turn timeline objects
           const turns = new Map();
           for (const ev of events) {
-            if (ev.kind === 'TURN_STARTED') {
+            if (!isMaze && ev.kind === 'TURN_STARTED') {
               turns.set(ev.turn, { turn: ev.turn, started: ev, action: null, resolved: null });
-            } else if (ev.kind === 'ACTION') {
+            } else if (!isMaze && ev.kind === 'ACTION') {
               const t = turns.get(ev.turn) || { turn: ev.turn, started: null, action: null, resolved: null };
               t.action = ev;
               turns.set(ev.turn, t);
-            } else if (ev.kind === 'TURN_RESOLVED') {
+            } else if (!isMaze && ev.kind === 'TURN_RESOLVED') {
+              const t = turns.get(ev.turn) || { turn: ev.turn, started: null, action: null, resolved: null };
+              t.resolved = ev;
+              turns.set(ev.turn, t);
+            }
+
+            if (isMaze && ev.kind === 'MAZE_TURN_STARTED') {
+              turns.set(ev.turn, { turn: ev.turn, started: ev, action: null, resolved: null });
+            } else if (isMaze && ev.kind === 'MAZE_ACTION') {
+              const t = turns.get(ev.turn) || { turn: ev.turn, started: null, action: null, resolved: null };
+              t.action = ev;
+              turns.set(ev.turn, t);
+            } else if (isMaze && ev.kind === 'MAZE_TURN_RESOLVED') {
               const t = turns.get(ev.turn) || { turn: ev.turn, started: null, action: null, resolved: null };
               t.resolved = ev;
               turns.set(ev.turn, t);
@@ -446,16 +479,29 @@
             .slice(0, 2)
             .map(it => it.turn);
 
-          const highlightSet = new Set([...sellTurns.map(t => t.turn), ...topDeltas]);
+          const highlightSet = isMaze
+            ? new Set(withDelta.filter(it => {
+                const t = String(it.action?.action?.type || '');
+                return t && t !== 'WAIT';
+              }).map(it => it.turn).slice(0, 3))
+            : new Set([...sellTurns.map(t => t.turn), ...topDeltas]);
 
           // Highlights summary (human-friendly)
-          const best = [...withDelta].sort((a,b) => b.deltaScore - a.deltaScore)[0];
-          const bestLine = best && best.deltaScore > 0 ? `Biggest swing: Turn ${best.turn} (+${best.deltaScore})` : null;
-          const sellsLine = sellTurns.length ? `Sells: ${sellTurns.length} turn${sellTurns.length === 1 ? '' : 's'}` : null;
-          const hiEl = document.getElementById('highlights');
-          if (hiEl) {
-            hiEl.innerHTML = [bestLine, sellsLine].filter(Boolean).map(x => `• ${esc(x)}`).join('<br/>');
+          if (!isMaze) {
+            const best = [...withDelta].sort((a,b) => b.deltaScore - a.deltaScore)[0];
+            const bestLine = best && best.deltaScore > 0 ? `Biggest swing: Turn ${best.turn} (+${best.deltaScore})` : null;
+            const sellsLine = sellTurns.length ? `Sells: ${sellTurns.length} turn${sellTurns.length === 1 ? '' : 's'}` : null;
+            const hiEl = document.getElementById('highlights');
+            if (hiEl) {
+              hiEl.innerHTML = [bestLine, sellsLine].filter(Boolean).map(x => `• ${esc(x)}`).join('<br/>');
+            }
+          } else {
+            const hiEl = document.getElementById('highlights');
+            if (hiEl) hiEl.innerHTML = '• Goal: reach the exit before you run out of turns.';
           }
+
+          // If this is a maze replay, render the maze visualization.
+          renderMazeViz();
 
           function deltaChip(prev, s, key) {
             const a = prev ? prev[key] : null;
@@ -465,6 +511,137 @@
             if (!d) return '';
             const sign = d > 0 ? '+' : '';
             return `${sign}${d}`;
+          }
+
+          function renderMazeViz() {
+            if (!isMaze || !mazeGrid || !mazeW || !mazeH || !mazeStart || !mazeExit) return;
+
+            // Extract path from resolved events
+            const steps = events
+              .filter(e => e.kind === 'MAZE_TURN_RESOLVED')
+              .map(e => ({ turn: e.turn, x: e.snapshot?.x, y: e.snapshot?.y, result: e.snapshot?.result }));
+
+            const last = steps[steps.length - 1];
+            const pos = last ? { x: last.x, y: last.y } : { x: mazeStart.x, y: mazeStart.y };
+
+            const container = document.getElementById('maze');
+            if (!container) return;
+            container.style.display = 'block';
+
+            // Build canvas
+            const cell = 18;
+            const pad = 14;
+            const W = mazeW * cell + pad * 2;
+            const H = mazeH * cell + pad * 2;
+            const canvas = document.createElement('canvas');
+            canvas.width = W;
+            canvas.height = H;
+            canvas.className = 'mazeCanvas';
+
+            const ctx = canvas.getContext('2d');
+            // background
+            ctx.fillStyle = 'rgba(0,0,0,0.20)';
+            ctx.fillRect(0, 0, W, H);
+
+            // draw grid
+            for (let y = 0; y < mazeH; y++) {
+              const row = mazeGrid[y] || '';
+              for (let x = 0; x < mazeW; x++) {
+                const ch = row[x];
+                const px = pad + x * cell;
+                const py = pad + y * cell;
+                if (ch === '#') {
+                  ctx.fillStyle = 'rgba(255,255,255,0.10)';
+                  ctx.fillRect(px, py, cell, cell);
+                } else {
+                  ctx.fillStyle = 'rgba(255,255,255,0.02)';
+                  ctx.fillRect(px, py, cell, cell);
+                }
+              }
+            }
+
+            // start/exit
+            function drawMarker(x, y, color) {
+              const cx = pad + x * cell + cell / 2;
+              const cy = pad + y * cell + cell / 2;
+              ctx.fillStyle = color;
+              ctx.beginPath();
+              ctx.arc(cx, cy, cell * 0.32, 0, Math.PI * 2);
+              ctx.fill();
+            }
+            drawMarker(mazeStart.x, mazeStart.y, 'rgba(0,123,255,0.95)');
+            drawMarker(mazeExit.x, mazeExit.y, 'rgba(40,167,69,0.95)');
+
+            // agent
+            drawMarker(pos.x, pos.y, 'rgba(255,255,255,0.95)');
+
+            // path trail (last 30)
+            const trail = steps.slice(-30);
+            ctx.fillStyle = 'rgba(255,255,255,0.12)';
+            for (const s of trail) {
+              const px = pad + s.x * cell + cell * 0.40;
+              const py = pad + s.y * cell + cell * 0.40;
+              ctx.fillRect(px, py, cell * 0.20, cell * 0.20);
+            }
+
+            const legend = document.createElement('div');
+            legend.className = 'mazeLegend';
+            const status = lastResolved?.score != null ? (lastResolved.score > 0 ? 'escaped' : 'running') : '';
+            legend.innerHTML = `Top-down maze (S=start, E=exit). Current: <code>(${pos.x},${pos.y})</code>`;
+
+            // simple playback control
+            const slider = document.createElement('input');
+            slider.type = 'range';
+            slider.min = '0';
+            slider.max = String(Math.max(0, steps.length - 1));
+            slider.value = String(Math.max(0, steps.length - 1));
+            slider.style.width = '100%';
+            slider.addEventListener('input', () => {
+              const idx = Number(slider.value);
+              const p = steps[idx] || steps[steps.length - 1];
+              if (!p) return;
+              // redraw quickly by rerunning render with a truncated steps list
+              const savedEvents = steps.slice(0, idx + 1);
+              // hack: just set last position and redraw minimal
+              const tmp = { x: p.x, y: p.y };
+              const ctx2 = canvas.getContext('2d');
+              ctx2.clearRect(0, 0, W, H);
+              ctx2.fillStyle = 'rgba(0,0,0,0.20)';
+              ctx2.fillRect(0, 0, W, H);
+              for (let y = 0; y < mazeH; y++) {
+                const row = mazeGrid[y] || '';
+                for (let x = 0; x < mazeW; x++) {
+                  const ch = row[x];
+                  const px = pad + x * cell;
+                  const py = pad + y * cell;
+                  ctx2.fillStyle = ch === '#' ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.02)';
+                  ctx2.fillRect(px, py, cell, cell);
+                }
+              }
+              const drawM = (x, y, color) => {
+                const cx = pad + x * cell + cell / 2;
+                const cy = pad + y * cell + cell / 2;
+                ctx2.fillStyle = color;
+                ctx2.beginPath();
+                ctx2.arc(cx, cy, cell * 0.32, 0, Math.PI * 2);
+                ctx2.fill();
+              };
+              drawM(mazeStart.x, mazeStart.y, 'rgba(0,123,255,0.95)');
+              drawM(mazeExit.x, mazeExit.y, 'rgba(40,167,69,0.95)');
+              ctx2.fillStyle = 'rgba(255,255,255,0.12)';
+              for (const s of savedEvents.slice(-30)) {
+                const px = pad + s.x * cell + cell * 0.40;
+                const py = pad + s.y * cell + cell * 0.40;
+                ctx2.fillRect(px, py, cell * 0.20, cell * 0.20);
+              }
+              drawM(tmp.x, tmp.y, 'rgba(255,255,255,0.95)');
+              legend.innerHTML = `Top-down maze (S=start, E=exit). Turn <code>${p.turn}</code> at <code>(${p.x},${p.y})</code>`;
+            });
+
+            container.innerHTML = '';
+            container.appendChild(canvas);
+            container.appendChild(legend);
+            container.appendChild(slider);
           }
 
           const html = withDelta.map(it => {
@@ -486,7 +663,13 @@
             const prevSnap = snapshots.get(it.turn - 1) || null;
             const notes = (resolved?.notes || []).map(n => `<li>${esc(n)}</li>`).join('');
 
-            const snap = resolved ? `<div class="chips">
+            const mazeSnap = resolved ? `<div class="chips">
+              <span class="chip pos"><span class="k">pos</span><span class="v">(${esc(s.x ?? '?')},${esc(s.y ?? '?')})</span><span class="d">${esc(s.moved === false ? 'blocked' : '')}</span></span>
+              <span class="chip turns"><span class="k">turns left</span><span class="v">${esc(s.turnsRemaining ?? '')}</span><span class="d"></span></span>
+              <span class="chip"><span class="k">result</span><span class="v">${esc(s.result ?? '')}</span><span class="d"></span></span>
+            </div>` : '';
+
+            const lobsterSnap = resolved ? `<div class="chips">
               <span class="chip cash"><span class="k">$</span><span class="v">${esc(s.cash ?? '')}</span><span class="d">${esc(deltaChip(prevSnap, s, 'cash'))}</span></span>
               <span class="chip bait"><span class="k">bait</span><span class="v">${esc(s.bait ?? '')}</span><span class="d">${esc(deltaChip(prevSnap, s, 'bait'))}</span></span>
               <span class="chip fuel"><span class="k">fuel</span><span class="v">${esc(s.fuel ?? '')}</span><span class="d">${esc(deltaChip(prevSnap, s, 'fuel'))}</span></span>
@@ -495,17 +678,23 @@
               <span class="chip"><span class="k">lobsters</span><span class="v">${esc(s.lobsters ?? '')}</span><span class="d">${esc(deltaChip(prevSnap, s, 'lobsters'))}</span></span>
             </div>` : '';
 
+            const snap = isMaze ? mazeSnap : lobsterSnap;
+
             const body = resolved ? `<div class="turnBody">
-              <div class="muted" style="margin-top:8px">Result: score ${esc(resolved.score ?? it.score)}</div>
+              <div class="muted" style="margin-top:8px">Result: ${isMaze ? 'turn resolved' : `score ${esc(resolved.score ?? it.score)}`}</div>
               ${snap}
               ${notes ? `<ul>${notes}</ul>` : ''}
             </div>` : `<div class="turnBody"><div class="muted">No resolution recorded.</div></div>`;
+
+            const summaryMeta = isMaze
+              ? `<span class="sumMeta">Pos (${esc(started?.x ?? '?')},${esc(started?.y ?? '?')})</span>`
+              : `<span class="sumMeta">Market ${esc(market)} · Weather ${esc(weather)}</span>`;
 
             return `<details class="turnCard" data-turn="${esc(it.turn)}"${open}>
               <summary>
                 <div class="sumLeft">
                   <span class="sumTurn">Turn ${esc(it.turn)}</span>
-                  <span class="sumMeta">Market ${esc(market)} · Weather ${esc(weather)}</span>
+                  ${summaryMeta}
                   <span class="sumAction">${esc(actionStr)}</span>
                   ${tag}
                 </div>

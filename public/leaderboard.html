@@ -39,6 +39,9 @@
       .card { border: 1px solid var(--border); background: var(--surface); border-radius: 12px; padding: 16px; margin: 14px 0; }
       .muted { color: var(--muted); }
       .accent { color: var(--accent); text-shadow: 0 0 10px rgba(40,167,69,0.55), 0 0 22px rgba(40,167,69,0.25); }
+      .accent-maze { color: #ff9900; text-shadow: 0 0 10px rgba(255,153,0,0.45), 0 0 22px rgba(255,153,0,0.18); }
+      .pill.game.lobster-run { color: #28a745; border-color: rgba(40,167,69,0.40); box-shadow: 0 0 14px rgba(40,167,69,0.18); }
+      .pill.game.maze-runner { color: #ff9900; border-color: rgba(255,153,0,0.40); box-shadow: 0 0 14px rgba(255,153,0,0.16); }
       table { border-collapse: collapse; width: 100%; }
       th, td { border-bottom: 1px solid var(--border); padding: 10px 8px; text-align: left; font-size: 14px; }
       th { color: var(--muted); font-weight: 600; }
@@ -58,7 +61,7 @@
     <div class="card">
       <div class="row">
         <div class="muted">Game:</div>
-        <span class="pill">lobster-run</span>
+        <span id="gamePill" class="pill game lobster-run">lobster-run</span>
         <div class="muted" style="margin-left:10px">Date:</div>
         <input id="date" type="date" />
         <button class="btn" id="today">Today</button>
@@ -124,8 +127,15 @@
       }
 
       const dateInput = document.getElementById('date');
+      const gamePill = document.getElementById('gamePill');
       const params = new URLSearchParams(window.location.search);
+      const game = params.get('game') || 'lobster-run';
       dateInput.value = params.get('date') || isoDate(new Date());
+      if (gamePill) {
+        gamePill.textContent = game;
+        gamePill.classList.remove('lobster-run','maze-runner');
+        gamePill.classList.add(game);
+      }
 
       document.getElementById('today').addEventListener('click', () => {
         dateInput.value = isoDate(new Date());
@@ -141,12 +151,13 @@
 
       async function load() {
         const date = dateInput.value;
-        const url = `/api/leaderboard/daily?game=lobster-run&date=${encodeURIComponent(date)}&limit=100`;
-        document.getElementById('title').textContent = `Daily leaderboard — ${date}`;
+        const url = `/api/leaderboard/daily?game=${encodeURIComponent(game)}&date=${encodeURIComponent(date)}&limit=100`;
+        document.getElementById('title').textContent = `${game === 'maze-runner' ? 'Maze Runner' : 'Lobster Run'} — Daily leaderboard — ${date}`;
 
         // Update URL
         const u = new URL(window.location.href);
         u.searchParams.set('date', date);
+        u.searchParams.set('game', game);
         history.replaceState({}, '', u);
 
         try {
@@ -158,6 +169,9 @@
             return;
           }
 
+          const isMaze = game === 'maze-runner';
+          const linkClass = isMaze ? 'accent-maze' : 'accent';
+
           lbEl.innerHTML = `
             <table>
               <thead><tr><th>#</th><th>Agent</th><th>Score</th><th>Replay</th></tr></thead>
@@ -166,11 +180,11 @@
                   <tr>
                     <td>${i+1}</td>
                     <td>
-                      <a class="accent" href="/agent/${esc(e.agentId)}">${esc(e.name)}</a>
+                      <a class="${linkClass}" href="/agent/${esc(e.agentId)}">${esc(e.name)}</a>
                       ${e.declaredModel ? `<span class="pill" title="Declared model">${esc(e.declaredModel)}</span>` : ''}
                     </td>
                     <td>${esc(e.score)}</td>
-                    <td><a class="accent" href="/replay/${esc(e.runId)}">${esc(e.runId)}</a></td>
+                    <td><a class="${linkClass}" href="/replay/${esc(e.runId)}">${esc(e.runId)}</a></td>
                   </tr>`).join('')}
               </tbody>
             </table>

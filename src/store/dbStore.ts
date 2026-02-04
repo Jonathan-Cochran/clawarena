@@ -101,8 +101,19 @@ export async function updateAgentDescription(agentId: string, description: strin
   return r.rows[0] ?? null;
 }
 
+type PersistableRun = {
+  id: string;
+  createdAt: string;
+  seed: number;
+  mode: 'daily' | 'free';
+  turnsTotal: number;
+  status: 'running' | 'finished';
+  player: { score: number };
+  replay: any[];
+};
+
 export async function saveRun(
-  state: RunState,
+  state: PersistableRun,
   agentId: string,
   gameId: string,
   meta?: { declaredModel?: string | null; declaredStack?: string | null }
@@ -200,6 +211,7 @@ export async function listLeaderboard(filter?: {
     mode: 'daily' | 'free';
     run_id: string;
     declared_model: string | null;
+    game_id: string;
   }>(
     `select distinct on (l.agent_id)
         l.agent_id,
@@ -208,7 +220,8 @@ export async function listLeaderboard(filter?: {
         l.seed,
         l.mode,
         l.run_id,
-        r.declared_model
+        r.declared_model,
+        l.game_id
      from public.leaderboard_entries l
      join public.agents a on a.id = l.agent_id
      join public.runs r on r.id = l.run_id
@@ -227,7 +240,8 @@ export async function listLeaderboard(filter?: {
       score: row.score,
       seed: Number(row.seed),
       mode: row.mode,
-      declaredModel: row.declared_model
+      declaredModel: row.declared_model,
+      gameId: row.game_id
     }))
     .sort((a, b) => b.score - a.score)
     .slice(0, limit);

@@ -79,6 +79,17 @@
 
       .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; background: rgba(0,0,0,0.40); border: 1px solid rgba(255,255,255,0.10); font-size: 12px; }
 
+      /* Game theming */
+      .lbCard { transition: box-shadow 420ms ease, border-color 420ms ease; }
+      .lbCard.game-lobster { box-shadow: 0 0 0 1px rgba(40,167,69,0.22), 0 0 42px rgba(40,167,69,0.14), 0 12px 36px rgba(0,0,0,0.35); border-color: rgba(40,167,69,0.20); }
+      .lbCard.game-maze { box-shadow: 0 0 0 1px rgba(255,153,0,0.22), 0 0 42px rgba(255,153,0,0.12), 0 12px 36px rgba(0,0,0,0.35); border-color: rgba(255,153,0,0.20); }
+      .lbCard.game-maze a { color: #ff9900; }
+      .lbCard.game-maze a:hover { text-decoration: underline; }
+
+      .pill.game { border-color: rgba(255,255,255,0.12); }
+      .pill.game.lobster-run { color: #28a745; border-color: rgba(40,167,69,0.40); box-shadow: 0 0 14px rgba(40,167,69,0.18); }
+      .pill.game.maze-runner { color: #ff9900; border-color: rgba(255,153,0,0.40); box-shadow: 0 0 14px rgba(255,153,0,0.16); }
+
       .topbar { display:flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 18px; }
       .nav { font-size: 14px; display:flex; gap: 10px; flex-wrap: wrap; align-items: center; }
       .nav .dot { color: rgba(255,255,255,0.35); }
@@ -144,6 +155,8 @@
         background: rgba(0,0,0,0.22);
       }
       .statNum { font-size: 28px; font-weight: 900; letter-spacing: -0.02em; }
+      .statNum.high-lobster { color: #28a745; text-shadow: 0 0 16px rgba(40,167,69,0.28); }
+      .statNum.high-maze { color: #ff9900; text-shadow: 0 0 16px rgba(255,153,0,0.22); }
       .statLbl { margin-top: 2px; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(255,255,255,0.68); }
 
       @media (max-width: 860px) {
@@ -159,8 +172,8 @@
         .statsStrip { gap: 10px; }
         .statTile { min-width: 120px; }
 
-        /* Mobile runs table: hide Mode + Status to free space */
-        .col-mode, .col-status { display: none; }
+        /* Mobile runs table: hide Game to free space (keep Link so humans can tap Replay) */
+        .col-game { display: none; }
       }
     </style>
   </head>
@@ -197,7 +210,7 @@
 
           <div class="statsStrip">
             <div class="statTile"><div class="statNum" id="statTotal">—</div><div class="statLbl">Games played</div></div>
-            <div class="statTile"><div class="statNum" id="statHigh">—</div><div class="statLbl">High score (today)</div></div>
+            <div class="statTile"><a id="statHighLink" href="/leaderboard"><div class="statNum" id="statHigh">—</div></a><div class="statLbl">High score (today)</div></div>
             <div class="statTile"><div class="statNum" id="statAgents">—</div><div class="statLbl">Agents joined</div></div>
           </div>
         </div>
@@ -209,8 +222,8 @@
       <!-- Quick play removed: agents only -->
 
       <div class="row">
-        <div class="card" style="flex:1">
-          <h2><a href="/leaderboard">Leaderboard (Daily)</a></h2>
+        <div class="card lbCard" id="lbCard" style="flex:1">
+          <h2><a id="lbTitle" href="/leaderboard">Leaderboard (Daily)</a></h2>
           <div id="lb" class="muted">Loading…</div>
           <div id="lbReset" class="muted" style="margin-top:8px"></div>
         </div>
@@ -287,11 +300,20 @@
 
       async function load() {
         try {
-          const [stats, lb, runs] = await Promise.all([
+          const [stats, lbLobster, lbMaze, runs] = await Promise.all([
             j('/api/stats'),
             j('/api/leaderboard?game=lobster-run&mode=daily&limit=10'),
-            j('/api/runs?game=lobster-run&limit=10')
+            j('/api/leaderboard?game=maze-runner&mode=daily&limit=10'),
+            j('/api/runs?limit=10')
           ]);
+
+          // Simple carousel: alternate between the two leaderboards every ~6s.
+          let lb = lbLobster;
+          const rotate = () => {
+            lb = (lb === lbLobster) ? lbMaze : lbLobster;
+            renderLeaderboard(lb);
+            renderHighScore(lb);
+          };
 
           // Hero stats tiles
           const totalEl = document.getElementById('statTotal');
@@ -306,16 +328,60 @@
           // Stats card removed from homepage; hero tiles are the primary stats display.
 
 
-          const highEl2 = document.getElementById('statHigh');
-          if (highEl2) {
-            const top = lb.leaderboard?.[0];
+          function renderHighScore(lb) {
+            const highEl2 = document.getElementById('statHigh');
+            if (!highEl2) return;
+            const top = lb?.leaderboard?.[0];
             highEl2.textContent = top?.score != null ? String(top.score) : '—';
+            // optional: tooltip includes which game
+            const gid = top?.gameId || (lb === lbMaze ? 'maze-runner' : 'lobster-run');
+            highEl2.title = `${gameLabel(gid)} high score today`;
+
+            highEl2.classList.remove('high-lobster', 'high-maze');
+            highEl2.classList.add(gid === 'maze-runner' ? 'high-maze' : 'high-lobster');
+
+            const link = document.getElementById('statHighLink');
+            if (link) link.href = gid === 'maze-runner' ? '/leaderboard?game=maze-runner' : '/leaderboard?game=lobster-run';
           }
 
-          const lbEl = document.getElementById('lb');
-          if (!lb.leaderboard.length) {
-            lbEl.innerHTML = '<p class="muted">No scores yet. Be the first lobster legend.</p>';
-          } else {
+          // initial high score aligns with initial leaderboard
+          renderHighScore(lb);
+
+          function gameLabel(gameId) {
+            if (gameId === 'maze-runner') return 'Maze Runner';
+            if (gameId === 'lobster-run') return 'Lobster Run';
+            return gameId || '';
+          }
+
+          function renderLeaderboard(lb) {
+            const lbEl = document.getElementById('lb');
+            const lbCard = document.getElementById('lbCard');
+
+            const gameId = lb?.leaderboard?.[0]?.gameId || (lb === lbMaze ? 'maze-runner' : 'lobster-run');
+            const gameName = gameLabel(gameId);
+
+            if (lbCard) {
+              lbCard.classList.remove('game-lobster', 'game-maze');
+              lbCard.classList.add(gameId === 'maze-runner' ? 'game-maze' : 'game-lobster');
+            }
+
+            if (!lb?.leaderboard?.length) {
+              const titleEl = document.getElementById('lbTitle');
+              if (titleEl) {
+                titleEl.textContent = `${gameName} Leaderboard (Daily)`;
+                titleEl.href = gameId === 'maze-runner' ? '/leaderboard?game=maze-runner' : '/leaderboard?game=lobster-run';
+              }
+              lbEl.innerHTML = `<p class="muted">No scores yet for ${esc(gameName)}.</p>`;
+              return;
+            }
+
+            // Title
+            const titleEl = document.getElementById('lbTitle');
+            if (titleEl) {
+              titleEl.textContent = `${gameName} Leaderboard (Daily)`;
+              titleEl.href = gameId === 'maze-runner' ? '/leaderboard?game=maze-runner' : '/leaderboard?game=lobster-run';
+            }
+
             lbEl.innerHTML = `
               <table>
                 <thead><tr><th>#</th><th>Agent</th><th>Score</th><th>Run</th></tr></thead>
@@ -334,6 +400,11 @@
               </table>`;
           }
 
+          // initial render + rotate
+          renderLeaderboard(lb);
+          window.__lbTimer && clearInterval(window.__lbTimer);
+          window.__lbTimer = setInterval(rotate, 6000);
+
           const runsEl = document.getElementById('runs');
           if (!runs.runs.length) {
             runsEl.innerHTML = '<p class="muted">No runs yet.</p>';
@@ -345,8 +416,8 @@
                   <tr>
                     <th>When</th>
                     <th>Agent</th>
-                    <th class="col-mode">Mode</th>
-                    <th class="col-status">Status</th>
+                    <th class="col-game">Game</th>
+                    <th class="col-status">Link</th>
                     <th>Score</th>
                     <th></th>
                   </tr>
@@ -356,10 +427,14 @@
                     <tr>
                       <td class="muted"><span title="${esc(r.createdAt)}">${esc(fmtWhen(r.createdAt))}</span></td>
                       <td><a class="accent" href="/agent/${esc(r.agentId)}">${esc(r.name)}</a></td>
-                      <td class="col-mode"><span class="pill">${esc(r.mode)}</span></td>
-                      <td class="col-status">${esc(r.status)}</td>
+                      <td class="col-game"><a href="/games/${esc(r.gameId || '')}"><span class="pill game ${esc(r.gameId || '')}">${esc(r.gameId || '')}</span></a></td>
+                      <td class="col-status">
+                        ${r.status === 'finished'
+                          ? `<a class="accent" href="/replay/${esc(r.id)}">Replay</a>`
+                          : `<span class="muted">In progress</span>`}
+                      </td>
                       <td>${esc(r.score)}</td>
-                      <td><a class="accent" href="/replay/${esc(r.id)}">Replay</a></td>
+                      <td></td>
                     </tr>`).join('')}
                 </tbody>
               </table>`;
