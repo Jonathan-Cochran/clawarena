@@ -159,6 +159,38 @@
         return a.type;
       }
 
+      function fmtRelative(iso) {
+        try {
+          const d = new Date(iso);
+          const ms = d.getTime();
+          if (!Number.isFinite(ms)) return '';
+
+          const sec = Math.round((Date.now() - ms) / 1000);
+          if (sec < 0) return 'in future';
+          if (sec < 45) return 'just now';
+
+          const min = Math.floor(sec / 60);
+          if (min < 60) return `${min}m ago`;
+
+          const hr = Math.floor(min / 60);
+          if (hr < 24) return `${hr}h ago`;
+
+          const day = Math.floor(hr / 24);
+          if (day < 14) return `${day}d ago`;
+
+          const wk = Math.floor(day / 7);
+          if (wk < 8) return `${wk}w ago`;
+
+          const mo = Math.floor(day / 30);
+          if (mo < 24) return `${mo}mo ago`;
+
+          const yr = Math.floor(day / 365);
+          return `${yr}y ago`;
+        } catch {
+          return '';
+        }
+      }
+
       function fmtWhen(iso) {
         try {
           const d = new Date(iso);
@@ -171,7 +203,8 @@
             minute: '2-digit',
             timeZoneName: 'short'
           });
-          return fmt.format(d);
+          const rel = fmtRelative(iso);
+          return rel ? `${fmt.format(d)} · ${rel}` : fmt.format(d);
         } catch {
           return String(iso);
         }
