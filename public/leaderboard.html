@@ -50,6 +50,16 @@
       .row { display:flex; gap: 10px; flex-wrap:wrap; align-items:center; }
       .btn { padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: rgba(0,0,0,0.35); color: var(--text); cursor:pointer; font-weight: 700; }
       .btn:hover { border-color: rgba(40,167,69,0.6); }
+      .btn.maze:hover { border-color: rgba(255,153,0,0.6); }
+
+      .tab { padding: 8px 10px; border: 1px solid var(--border); border-radius: 999px; background: rgba(0,0,0,0.25); font-weight: 800; font-size: 13px; cursor: pointer; }
+      .tab.active { border-color: rgba(255,255,255,0.24); box-shadow: 0 0 0 1px rgba(255,255,255,0.05) inset; }
+      .tab.lobster.active { border-color: rgba(40,167,69,0.45); box-shadow: 0 0 18px rgba(40,167,69,0.16); }
+      .tab.maze.active { border-color: rgba(255,153,0,0.45); box-shadow: 0 0 18px rgba(255,153,0,0.14); }
+      .tabLabel { display:inline-flex; align-items:center; gap:8px; }
+      .dot { width:8px; height:8px; border-radius:999px; display:inline-block; }
+      .dot.lobster { background:#28a745; box-shadow: 0 0 10px rgba(40,167,69,0.40); }
+      .dot.maze { background:#ff9900; box-shadow: 0 0 10px rgba(255,153,0,0.32); }
     </style>
   </head>
   <body>
@@ -61,7 +71,16 @@
     <div class="card">
       <div class="row">
         <div class="muted">Game:</div>
+        <button class="tab lobster" id="tabLobster" title="Show Lobster Run leaderboard">
+          <span class="tabLabel"><span class="dot lobster"></span> Lobster Run</span>
+        </button>
+        <button class="tab maze" id="tabMaze" title="Show Maze Runner leaderboard">
+          <span class="tabLabel"><span class="dot maze"></span> Maze Runner</span>
+        </button>
+
+        <span class="muted" style="margin-left:6px">·</span>
         <span id="gamePill" class="pill game lobster-run">lobster-run</span>
+
         <div class="muted" style="margin-left:10px">Date:</div>
         <input id="date" type="date" />
         <button class="btn" id="today">Today</button>
@@ -128,20 +147,41 @@
 
       const dateInput = document.getElementById('date');
       const gamePill = document.getElementById('gamePill');
+      const tabLobster = document.getElementById('tabLobster');
+      const tabMaze = document.getElementById('tabMaze');
+
       const params = new URLSearchParams(window.location.search);
-      const game = params.get('game') || 'lobster-run';
+      let game = params.get('game') || 'lobster-run';
       dateInput.value = params.get('date') || isoDate(new Date());
-      if (gamePill) {
-        gamePill.textContent = game;
-        gamePill.classList.remove('lobster-run','maze-runner');
-        gamePill.classList.add(game);
+
+      function setGame(nextGame) {
+        game = nextGame;
+
+        if (tabLobster) tabLobster.classList.toggle('active', game === 'lobster-run');
+        if (tabMaze) tabMaze.classList.toggle('active', game === 'maze-runner');
+
+        if (gamePill) {
+          gamePill.textContent = game;
+          gamePill.classList.remove('lobster-run','maze-runner');
+          gamePill.classList.add(game);
+        }
+
+        load();
       }
 
-      document.getElementById('today').addEventListener('click', () => {
+      // Init tabs
+      setGame(game);
+      if (tabLobster) tabLobster.addEventListener('click', () => setGame('lobster-run'));
+      if (tabMaze) tabMaze.addEventListener('click', () => setGame('maze-runner'));
+
+      const todayBtn = document.getElementById('today');
+      const ydayBtn = document.getElementById('yesterday');
+
+      if (todayBtn) todayBtn.addEventListener('click', () => {
         dateInput.value = isoDate(new Date());
         load();
       });
-      document.getElementById('yesterday').addEventListener('click', () => {
+      if (ydayBtn) ydayBtn.addEventListener('click', () => {
         const d = new Date();
         d.setDate(d.getDate()-1);
         dateInput.value = isoDate(d);
@@ -152,7 +192,12 @@
       async function load() {
         const date = dateInput.value;
         const url = `/api/leaderboard/daily?game=${encodeURIComponent(game)}&date=${encodeURIComponent(date)}&limit=100`;
-        document.getElementById('title').textContent = `${game === 'maze-runner' ? 'Maze Runner' : 'Lobster Run'} — Daily leaderboard — ${date}`;
+        const isMaze = game === 'maze-runner';
+        document.getElementById('title').textContent = `${isMaze ? 'Maze Runner' : 'Lobster Run'} — Daily leaderboard — ${date}`;
+
+        // Subtle button hover theming
+        if (todayBtn) todayBtn.classList.toggle('maze', isMaze);
+        if (ydayBtn) ydayBtn.classList.toggle('maze', isMaze);
 
         // Update URL
         const u = new URL(window.location.href);
@@ -169,7 +214,6 @@
             return;
           }
 
-          const isMaze = game === 'maze-runner';
           const linkClass = isMaze ? 'accent-maze' : 'accent';
 
           lbEl.innerHTML = `
@@ -195,7 +239,6 @@
       }
 
       updateResetHint();
-      load();
     </script>
   </body>
 </html>
