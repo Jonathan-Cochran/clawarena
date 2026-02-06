@@ -59,6 +59,58 @@
         backdrop-filter: blur(6px);
       }
 
+      /* Replay scoreboard header */
+      .scoreboard {
+        position: relative;
+        overflow: hidden;
+        padding: 0;
+        background:
+          linear-gradient(180deg, rgba(0,0,0,0.72), rgba(0,0,0,0.35)),
+          url('/assets/replay_header.png');
+        background-size: cover;
+        background-position: center;
+        border-color: rgba(255,255,255,0.12);
+      }
+      .scoreboard::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background:
+          radial-gradient(1200px 420px at 20% 0%, rgba(40,167,69,0.20), rgba(40,167,69,0.00) 60%),
+          radial-gradient(1200px 420px at 80% 0%, rgba(255,153,0,0.16), rgba(255,153,0,0.00) 60%);
+        opacity: 0.55;
+        pointer-events: none;
+      }
+      .scoreboardInner {
+        position: relative;
+        z-index: 1;
+        padding: 16px;
+        display: flex;
+        gap: 14px;
+        align-items: flex-start;
+        justify-content: space-between;
+        flex-wrap: wrap;
+      }
+      .scoreTitle {
+        font-family: "Inter Tight", Inter, system-ui;
+        font-weight: 900;
+        letter-spacing: -0.02em;
+        font-size: 28px;
+        line-height: 1.1;
+      }
+      .scoreSub code { font-size: 12px; }
+      .scoreLeft { min-width: 220px; }
+      .scoreRight { flex: 1; min-width: 280px; }
+
+      /* meta kv inside scoreboard */
+      .scoreboard .kv > div { min-width: 150px; }
+      .scoreboard .controls { margin-top: 10px; }
+
+      @media (max-width: 640px) {
+        .scoreTitle { font-size: 22px; }
+        .scoreboardInner { padding: 14px; }
+      }
+
       .kv { display:flex; gap: 16px; flex-wrap: wrap; }
       .kv > div { min-width: 160px; }
       code { background: rgba(0,0,0,0.45); border: 1px solid rgba(255,255,255,0.10); padding: 2px 6px; border-radius: 8px; }
@@ -121,16 +173,24 @@
         </div>
       </div>
 
-      <h1 style="margin-top:16px">Replay</h1>
-      <p class="muted">Run: <code id="runId"></code></p>
+      <h1 style="margin-top:16px; display:none">Replay</h1>
+      <p class="muted" style="display:none">Run: <code id="runId"></code></p>
 
-      <div class="card" id="summary">
-        <div class="kv" id="meta"></div>
-        <div id="highlights" class="muted" style="margin-top:10px"></div>
-        <div class="controls">
-          <button id="expandAll" class="btn small secondary">Expand all</button>
-          <button id="collapseAll" class="btn small secondary">Collapse all</button>
+      <div class="card scoreboard" id="summary">
+        <div class="scoreboardInner">
+          <div class="scoreLeft">
+            <div class="scoreTitle">Replay</div>
+            <div class="scoreSub muted">Run: <code id="runIdInline"></code></div>
+          </div>
+          <div class="scoreRight">
+            <div class="kv" id="meta"></div>
+            <div class="controls">
+              <button id="expandAll" class="btn small secondary">Expand all</button>
+              <button id="collapseAll" class="btn small secondary">Collapse all</button>
+            </div>
+          </div>
         </div>
+        <div id="highlights" class="muted" style="margin-top:10px"></div>
       </div>
 
       <div class="card">
@@ -211,7 +271,10 @@
       }
 
       const runId = location.pathname.split('/').pop();
-      document.getElementById('runId').textContent = runId;
+      const runIdEl = document.getElementById('runId');
+      if (runIdEl) runIdEl.textContent = runId;
+      const runIdInline = document.getElementById('runIdInline');
+      if (runIdInline) runIdInline.textContent = runId;
 
       function toast(msg) {
         const el = document.getElementById('toast');
