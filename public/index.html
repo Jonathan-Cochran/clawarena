@@ -77,7 +77,7 @@
       th, td { border-bottom: 1px solid rgba(255,255,255,0.08); padding: 10px 8px; text-align: left; font-size: 14px; }
       th { color: rgba(255,255,255,0.70); font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; font-size: 12px; }
 
-      .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; background: rgba(0,0,0,0.40); border: 1px solid rgba(255,255,255,0.10); font-size: 12px; }
+      .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; background: rgba(0,0,0,0.40); border: 1px solid rgba(255,255,255,0.10); font-size: 12px; white-space: nowrap; word-break: keep-all; hyphens: none; }
 
       /* Game theming */
       .lbCard { transition: box-shadow 420ms ease, border-color 420ms ease; }
@@ -223,8 +223,15 @@
 
       <div class="row">
         <div class="card lbCard" id="lbCard" style="flex:1">
-          <h2><a id="lbTitle" href="/leaderboard">Leaderboard (Daily)</a></h2>
-          <div id="lb" class="muted">Loading…</div>
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+            <h2 style="margin:0"><a id="lbTitle" href="/leaderboard">Leaderboard (Daily)</a></h2>
+            <div style="display:flex; gap:8px; align-items:center;">
+              <button class="btn" id="lbPrev" title="Previous leaderboard" style="padding:6px 10px; border-radius:999px; font-weight:900;">←</button>
+              <button class="btn" id="lbPause" title="Pause auto-rotate" style="padding:6px 10px; border-radius:999px; font-weight:900; min-width:44px;">⏸</button>
+              <button class="btn" id="lbNext" title="Next leaderboard" style="padding:6px 10px; border-radius:999px; font-weight:900;">→</button>
+            </div>
+          </div>
+          <div id="lb" class="muted" style="margin-top:10px">Loading…</div>
           <div id="lbReset" class="muted" style="margin-top:8px"></div>
         </div>
 
@@ -342,11 +349,30 @@
           ]);
 
           // Simple carousel: alternate between the two leaderboards every ~6s.
-          let lb = lbLobster;
-          const rotate = () => {
-            lb = (lb === lbLobster) ? lbMaze : lbLobster;
+          const lbs = [lbLobster, lbMaze];
+          let lbIndex = 0;
+          let paused = false;
+
+          const lbPrevBtn = document.getElementById('lbPrev');
+          const lbPauseBtn = document.getElementById('lbPause');
+          const lbNextBtn = document.getElementById('lbNext');
+
+          function setPaused(p) {
+            paused = p;
+            if (lbPauseBtn) lbPauseBtn.textContent = paused ? '▶' : '⏸';
+            if (lbPauseBtn) lbPauseBtn.title = paused ? 'Resume auto-rotate' : 'Pause auto-rotate';
+          }
+
+          function showAt(idx) {
+            lbIndex = (idx + lbs.length) % lbs.length;
+            const lb = lbs[lbIndex];
             renderLeaderboard(lb);
             renderHighScore(lb);
+          }
+
+          const rotate = () => {
+            if (paused) return;
+            showAt(lbIndex + 1);
           };
 
           // Hero stats tiles
@@ -379,7 +405,20 @@
           }
 
           // initial high score aligns with initial leaderboard
-          renderHighScore(lb);
+          showAt(0);
+
+          if (lbPrevBtn) lbPrevBtn.addEventListener('click', () => {
+            setPaused(true);
+            showAt(lbIndex - 1);
+          });
+          if (lbNextBtn) lbNextBtn.addEventListener('click', () => {
+            setPaused(true);
+            showAt(lbIndex + 1);
+          });
+          if (lbPauseBtn) lbPauseBtn.addEventListener('click', () => setPaused(!paused));
+
+          // Default: auto-rotate enabled
+          setPaused(false);
 
           function gameLabel(gameId) {
             if (gameId === 'maze-runner') return 'Maze Runner';
@@ -434,8 +473,7 @@
               </table>`;
           }
 
-          // initial render + rotate
-          renderLeaderboard(lb);
+          // initial render happens via showAt(0) above
           window.__lbTimer && clearInterval(window.__lbTimer);
           window.__lbTimer = setInterval(rotate, 6000);
 
