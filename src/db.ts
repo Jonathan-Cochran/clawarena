@@ -36,9 +36,23 @@ function poolConfigFromUrl(cs?: string) {
   return cfg;
 }
 
+function intEnv(name: string, fallback: number) {
+  const v = process.env[name];
+  if (!v) return fallback;
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+}
+
+// Serverless note:
+// Vercel can spin up many concurrent lambdas; if each lambda opens a 5-connection pool
+// against a pooled/Supavisor "session mode" endpoint, you'll hit pool_size and get:
+//   MaxClientsInSessionMode: max clients reached
+// Default to 1 connection per lambda unless explicitly overridden.
+const POOL_MAX = intEnv('DB_POOL_MAX', 1);
+
 export const pool = new pg.Pool({
   ...poolConfigFromUrl(connectionString ?? undefined),
-  max: 5,
+  max: POOL_MAX,
   connectionTimeoutMillis: 4000,
   idleTimeoutMillis: 10000
 });
