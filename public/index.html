@@ -227,7 +227,6 @@
             <h2 style="margin:0"><a id="lbTitle" href="/leaderboard">Leaderboard (Daily)</a></h2>
             <div style="display:flex; gap:8px; align-items:center;">
               <button class="btn" id="lbPrev" title="Previous leaderboard" style="padding:6px 10px; border-radius:999px; font-weight:900;">←</button>
-              <button class="btn" id="lbPause" title="Pause auto-rotate" style="padding:6px 10px; border-radius:999px; font-weight:900; min-width:44px;">⏸</button>
               <button class="btn" id="lbNext" title="Next leaderboard" style="padding:6px 10px; border-radius:999px; font-weight:900;">→</button>
             </div>
           </div>
@@ -354,13 +353,11 @@
           let paused = false;
 
           const lbPrevBtn = document.getElementById('lbPrev');
-          const lbPauseBtn = document.getElementById('lbPause');
           const lbNextBtn = document.getElementById('lbNext');
 
-          function setPaused(p) {
-            paused = p;
-            if (lbPauseBtn) lbPauseBtn.textContent = paused ? '▶' : '⏸';
-            if (lbPauseBtn) lbPauseBtn.title = paused ? 'Resume auto-rotate' : 'Pause auto-rotate';
+          let pauseUntilMs = 0;
+          function pauseFor(ms) {
+            pauseUntilMs = Date.now() + ms;
           }
 
           function showAt(idx) {
@@ -371,7 +368,7 @@
           }
 
           const rotate = () => {
-            if (paused) return;
+            if (Date.now() < pauseUntilMs) return;
             showAt(lbIndex + 1);
           };
 
@@ -408,17 +405,16 @@
           showAt(0);
 
           if (lbPrevBtn) lbPrevBtn.addEventListener('click', () => {
-            setPaused(true);
             showAt(lbIndex - 1);
+            pauseFor(12_000);
           });
           if (lbNextBtn) lbNextBtn.addEventListener('click', () => {
-            setPaused(true);
             showAt(lbIndex + 1);
+            pauseFor(12_000);
           });
-          if (lbPauseBtn) lbPauseBtn.addEventListener('click', () => setPaused(!paused));
 
           // Default: auto-rotate enabled
-          setPaused(false);
+          pauseUntilMs = 0;
 
           function gameLabel(gameId) {
             if (gameId === 'maze-runner') return 'Maze Runner';
