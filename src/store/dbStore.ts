@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import type { LeaderboardEntry, RunId, RunState } from '../game/types.js';
 import { sql } from '../db.js';
 
@@ -6,6 +7,7 @@ export type AgentRecord = {
   name: string;
   description?: string | null;
   apiKey: string;
+  apiKeyLast4?: string | null;
   claimToken: string;
   verificationCode: string;
   status: 'pending_claim' | 'claimed';
@@ -17,6 +19,22 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+function apiKeyPepper() {
+  return process.env.API_KEY_PEPPER || '';
+}
+
+function apiKeyLast4(apiKey: string) {
+  const s = String(apiKey);
+  return s.length >= 4 ? s.slice(-4) : s;
+}
+
+function apiKeyHash(apiKey: string) {
+  const pepper = apiKeyPepper();
+  if (!pepper) return null;
+  // HMAC avoids rainbow-table issues and allows pepper rotation in future.
+  return crypto.createHmac('sha256', pepper).update(apiKey).digest('hex');
+}
+
 function randHex(len = 24) {
   const chars = '0123456789abcdef';
   let out = '';
@@ -25,11 +43,13 @@ function randHex(len = 24) {
 }
 
 export async function registerAgent(params: { name: string; description?: string }) {
+  const apiKey = `clawarena_${randHex(26)}`;
   const agent: AgentRecord = {
     id: `a_${randHex(18)}`,
     name: params.name,
     description: params.description,
-    apiKey: `clawarena_${randHex(26)}`,
+    apiKey,
+    apiKeyLast4: apiKeyLast4(apiKey),
     claimToken: `clawarena_claim_${randHex(26)}`,
     verificationCode: `reef-${Math.random().toString(36).slice(2, 6).toUpperCase()}${Math.random().toString(36).slice(2, 6).toUpperCase()}`,
     status: 'pending_claim',
@@ -37,37 +57,72 @@ export async function registerAgent(params: { name: string; description?: string
     claimedAt: null
   };
 
+  const keyHash = apiKeyHash(apiKey);
+
   await sql(
-    `insert into public.agents (id, name, description, api_key, claim_token, verification_code, status)
-     values ($1,$2,$3,$4,$5,$6,$7)` ,
-    [agent.id, agent.name, agent.description ?? null, agent.apiKey, agent.claimToken, agent.verificationCode, agent.status]
+    `insert into public.agents (id, name, description, api_key, api_key_hash, api_key_last4, claim_token, verification_code, status)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9)` ,
+    [
+      agent.id,
+      agent.name,
+      agent.description ?? null,
+      apiKey,
+      keyHash,
+      agent.apiKeyLast4 ?? null,
+      agent.claimToken,
+      agent.verificationCode,
+      agent.status
+    ]
   );
 
   return agent;
 }
 
 export async function getAgentByApiKey(apiKey: string) {
+  const keyHash = apiKeyHash(apiKey);
+
   const r = await sql<{
     id: string;
     name: string;
     description: string | null;
     api_key: string;
+    api_key_hash: string | null;
+    api_key_last4: string | null;
     claim_token: string;
     verification_code: string;
     status: 'pending_claim' | 'claimed';
     created_at: string;
     claimed_at: string | null;
   }>(
-    `select * from public.agents where api_key = $1 limit 1`,
-    [apiKey]
+    // Prefer hash match when pepper is configured; fall back to legacy plaintext match.
+    // (We keep plaintext keys for now because only a couple exist; RLS will also prevent public leakage.)
+    keyHash
+      ? `select * from public.agents where api_key_hash = $1 limit 1`
+      : `select * from public.agents where api_key = $1 limit 1`,
+    [keyHash ?? apiKey]
   );
+
   const row = r.rows[0];
   if (!row) return null;
+
+  // Opportunistic hardening: backfill hash/last4 once we successfully authenticate.
+  if (keyHash && (!row.api_key_hash || !row.api_key_last4)) {
+    try {
+      await sql(
+        `update public.agents set api_key_hash=$2, api_key_last4=$3 where id=$1`,
+        [row.id, keyHash, apiKeyLast4(apiKey)]
+      );
+    } catch {
+      // Never fail auth due to backfill.
+    }
+  }
+
   return {
     id: row.id,
     name: row.name,
     description: row.description,
     apiKey: row.api_key,
+    apiKeyLast4: row.api_key_last4,
     claimToken: row.claim_token,
     verificationCode: row.verification_code,
     status: row.status,
