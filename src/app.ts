@@ -12,6 +12,7 @@ import {
   updateAgentDescription,
   getRunReplay,
   getLiveRunState,
+  getSpectateSnapshot,
   getStats,
   cleanupStaleRunningRuns,
   listLeaderboard,
@@ -19,8 +20,14 @@ import {
   recordScore,
   registerAgent,
   saveRun,
-  listAgents
+  listAgents,
+  startOwnerEmailVerification,
+  confirmOwnerEmailVerification,
+  listUpcomingChallenges,
+  getChallengeById,
+  createChallengeEntry
 } from './store/dbStore.js';
+import { sendMail } from './mail/agentMail.js';
 
 function hostBase(req: express.Request) {
   const proto = (req.headers['x-forwarded-proto'] as string) ?? 'https';
@@ -90,6 +97,13 @@ app.get('/terms', (_req, res) => sendHtml(res, 'terms.html'));
 app.get('/leaderboard', (_req, res) => sendHtml(res, 'leaderboard.html'));
 app.get('/agents', (_req, res) => sendHtml(res, 'agents.html'));
 
+// Challenge mode (V1)
+app.get('/challenges', (_req, res) => sendHtml(res, 'challenges.html'));
+app.get('/challenge/:challengeId', (_req, res) => sendHtml(res, 'challenge.html'));
+
+// Owner email verification link landing
+app.get('/verify-email/:token', (_req, res) => sendHtml(res, 'verify_email.html'));
+
 // Bot-author docs
 app.get('/api/v1/docs', (_req, res) => sendHtml(res, 'api_v1_docs.html'));
 
@@ -110,6 +124,7 @@ app.get('/messaging', (_req, res) => res.redirect(302, '/MESSAGING.md'));
 app.get('/claim/:token', (_req, res) => sendHtml(res, 'claim.html'));
 app.get('/agent/:agentId', (_req, res) => sendHtml(res, 'agent.html'));
 app.get('/replay/:runId', (_req, res) => sendHtml(res, 'replay.html'));
+app.get('/spectate/:runId', (_req, res) => sendHtml(res, 'spectate.html'));
 
 app.get('/healthz', (_req, res) => res.json({ ok: true }));
 
@@ -117,6 +132,21 @@ app.get('/api/agents/:agentId', a(async (req: express.Request, res: express.Resp
   const p = await getAgentProfile(req.params.agentId);
   if (!p) return res.status(404).json({ error: 'not_found' });
   return res.json(p);
+}));
+
+// --- Challenges (public read)
+app.get('/api/challenges/upcoming', a(async (req: express.Request, res: express.Response) => {
+  const q = z.object({ limit: z.coerce.number().int().min(1).max(50).optional() }).safeParse(req.query);
+  if (!q.success) return res.status(400).json({ error: 'invalid_request' });
+  res.json({ challenges: await listUpcomingChallenges({ limit: q.data.limit }) });
+}));
+
+app.get('/api/challenges/:id', a(async (req: express.Request, res: express.Response) => {
+  const c = await getChallengeById(req.params.id);
+  if (!c) return res.status(404).json({ error: 'not_found' });
+  // Only return published challenges via public endpoint.
+  if (c.status !== 'published') return res.status(404).json({ error: 'not_found' });
+  res.json({ challenge: c });
 }));
 
 // Agent-authenticated feedback is registered further down after V1 is defined.
@@ -161,6 +191,131 @@ app.get('/api/runs', a(async (req: express.Request, res: express.Response) => {
   // If no game is provided, return recent runs across all games.
   res.json({ runs: await listRuns({ gameId: q.data.game, limit: q.data.limit }) });
 }));
+
+// --- Spectator stream (Server-Sent Events)
+// Streams updated state_json from Postgres for running Maze Runner runs.
+//
+// Notes for serverless:
+// - Some deployments may not support long-lived streaming reliably.
+// - The client includes a basic fallback to the replay page.
+app.get('/api/spectate/:runId/stream', (req, res) => {
+  const runId = String(req.params.runId || '').trim();
+  if (!/^r_[A-Za-z0-9]+$/.test(runId)) return res.status(400).json({ error: 'invalid_run_id' });
+
+  // SSE headers
+  res.status(200);
+  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  // Prevent some proxies from buffering the stream.
+  res.setHeader('X-Accel-Buffering', 'no');
+
+  // @ts-ignore - express Response has flushHeaders at runtime
+  res.flushHeaders?.();
+
+  let closed = false;
+  req.on('close', () => {
+    closed = true;
+  });
+
+  const writeEvent = (evt: { event: string; data?: any }) => {
+    if (closed) return;
+    res.write(`event: ${evt.event}\n`);
+    if (evt.data !== undefined) {
+      res.write(`data: ${JSON.stringify(evt.data)}\n`);
+    }
+    res.write('\n');
+  };
+
+  const sendSnapshot = async () => {
+    const snap = await getSpectateSnapshot(runId);
+    if (!snap) {
+      writeEvent({ event: 'state', data: { error: 'not_found' } });
+      res.end();
+      return null;
+    }
+    if (snap.gameId !== 'maze-runner') {
+      writeEvent({ event: 'state', data: { error: 'unsupported_game', gameId: snap.gameId } });
+      res.end();
+      return null;
+    }
+
+    writeEvent({
+      event: 'state',
+      data: {
+        runId: snap.runId,
+        agentId: snap.agentId,
+        gameId: snap.gameId,
+        status: snap.status,
+        updatedAt: snap.updatedAt,
+        state: snap.state
+      }
+    });
+
+    return snap;
+  };
+
+  let lastUpdatedAt: string | null = null;
+
+  // Kick off initial snapshot + polling loop.
+  (async () => {
+    try {
+      const first = await sendSnapshot();
+      if (!first) return;
+      lastUpdatedAt = first.updatedAt;
+
+      // Poll for updates; keep it conservative.
+      const pollEveryMs = 900;
+      const pingEveryMs = 15000;
+
+      let lastPingAt = Date.now();
+      while (!closed) {
+        // Ping comments keep the connection alive through some intermediaries.
+        const now = Date.now();
+        if (now - lastPingAt >= pingEveryMs) {
+          writeEvent({ event: 'ping' });
+          lastPingAt = now;
+        }
+
+        await new Promise((r) => setTimeout(r, pollEveryMs));
+        if (closed) break;
+
+        const snap = await getSpectateSnapshot(runId);
+        if (!snap) {
+          // Run deleted? End stream.
+          res.end();
+          break;
+        }
+        if (!lastUpdatedAt || snap.updatedAt > lastUpdatedAt) {
+          lastUpdatedAt = snap.updatedAt;
+          writeEvent({
+            event: 'state',
+            data: {
+              runId: snap.runId,
+              agentId: snap.agentId,
+              gameId: snap.gameId,
+              status: snap.status,
+              updatedAt: snap.updatedAt,
+              state: snap.state
+            }
+          });
+        }
+        // If finished and state_json is cleared, at least send one last event then close.
+        if (snap.status === 'finished') {
+          // Let client render the final state, then end.
+          // (If state_json is null, client can use replay.)
+          res.end();
+          break;
+        }
+      }
+    } catch (e) {
+      if (!closed) {
+        writeEvent({ event: 'state', data: { error: 'server_error' } });
+        res.end();
+      }
+    }
+  })();
+});
 
 // --- API v1 (OpenClaw-friendly)
 const V1 = '/api/v1';
@@ -222,7 +377,63 @@ app.get(`${V1}/agents/me`, a(async (req: express.Request, res: express.Response)
   if (!key) return res.status(401).json({ error: 'missing_api_key' });
   const agent = await getAgentByApiKey(key);
   if (!agent) return res.status(401).json({ error: 'invalid_api_key' });
-  res.json({ agent: { id: agent.id, name: agent.name, description: agent.description, status: agent.status } });
+  res.json({
+    agent: {
+      id: agent.id,
+      name: agent.name,
+      description: agent.description,
+      status: agent.status,
+      owner_email: agent.ownerEmail ?? null,
+      owner_email_verified_at: agent.ownerEmailVerifiedAt ?? null
+    }
+  });
+}));
+
+// --- Owner email verification (V1)
+app.post(`${V1}/agents/owner-email/start`, a(async (req: express.Request, res: express.Response) => {
+  const key = requireApiKey(req);
+  if (!key) return res.status(401).json({ error: 'missing_api_key' });
+  const agent = await getAgentByApiKey(key);
+  if (!agent) return res.status(401).json({ error: 'invalid_api_key' });
+
+  const body = z.object({ email: z.string().min(6).max(254) }).safeParse(req.body ?? {});
+  if (!body.success) return res.status(400).json({ error: 'invalid_request' });
+
+  const v = await startOwnerEmailVerification({ agentId: agent.id, email: body.data.email });
+  const link = `${hostBase(req)}/verify-email/${encodeURIComponent(v.token)}`;
+
+  await sendMail({
+    to: v.email,
+    subject: 'Verify your ClawArena agent ownership email',
+    text: `Your ClawArena verification code is: ${v.code}\n\nOr click this link: ${link}\n\nThis code expires in 30 minutes.`,
+    html: `<p>Your ClawArena verification code is:</p><p style="font-size:22px;font-weight:800;letter-spacing:0.08em">${v.code}</p><p>Or click: <a href="${link}">${link}</a></p><p class="muted">This code expires in 30 minutes.</p>`
+  });
+
+  res.json({ ok: true, expiresAt: v.expiresAt });
+}));
+
+app.post(`${V1}/agents/owner-email/confirm`, a(async (req: express.Request, res: express.Response) => {
+  const key = requireApiKey(req);
+  if (!key) return res.status(401).json({ error: 'missing_api_key' });
+  const agent = await getAgentByApiKey(key);
+  if (!agent) return res.status(401).json({ error: 'invalid_api_key' });
+
+  const body = z.object({ code: z.string().min(4).max(12) }).safeParse(req.body ?? {});
+  if (!body.success) return res.status(400).json({ error: 'invalid_request' });
+
+  const result = await confirmOwnerEmailVerification({ agentId: agent.id, code: body.data.code });
+  if (!result.ok) return res.status(400).json({ error: result.error });
+
+  res.json({ ok: true, email: result.email });
+}));
+
+app.get(`/api/verify-email/:token`, a(async (req: express.Request, res: express.Response) => {
+  const token = String(req.params.token || '').trim();
+  if (!token) return res.status(400).json({ error: 'invalid_request' });
+
+  const result = await confirmOwnerEmailVerification({ token });
+  if (!result.ok) return res.status(400).json({ ok: false, error: result.error });
+  res.json({ ok: true, agentId: result.agentId, email: result.email });
 }));
 
 app.patch(`${V1}/agents/me`, a(async (req: express.Request, res: express.Response) => {
@@ -336,6 +547,26 @@ app.get('/api/agents', a(async (req: express.Request, res: express.Response) => 
   if (!q.success) return res.status(400).json({ error: 'invalid_request' });
 
   res.json({ agents: await listAgents({ limit: q.data.limit ?? 200 }) });
+}));
+
+// --- Challenges (agent write)
+app.post(`${V1}/challenges/:challengeId/entries`, a(async (req: express.Request, res: express.Response) => {
+  const key = requireApiKey(req);
+  if (!key) return res.status(401).json({ error: 'missing_api_key' });
+  const agent = await getAgentByApiKey(key);
+  if (!agent) return res.status(401).json({ error: 'invalid_api_key' });
+
+  // Hard gating: challenge entries are claimed agents only + verified owner email.
+  if (agent.status !== 'claimed') return res.status(403).json({ error: 'claimed_agents_only' });
+  if (!agent.ownerEmailVerifiedAt) return res.status(403).json({ error: 'owner_email_not_verified' });
+
+  const body = z.object({ runId: z.string().min(6).max(80) }).safeParse(req.body ?? {});
+  if (!body.success) return res.status(400).json({ error: 'invalid_request' });
+
+  const result = await createChallengeEntry({ challengeId: req.params.challengeId, agentId: agent.id, runId: body.data.runId });
+  if (!result.ok) return res.status(400).json({ error: result.error });
+
+  res.json({ ok: true, entry: result.entry });
 }));
 
 // Human-friendly daily leaderboard by date (no seed exposure)

@@ -136,15 +136,22 @@
           } else {
             runsEl.innerHTML = `
               <table>
-                <thead><tr><th>When</th><th>Mode</th><th>Status</th><th>Score</th><th></th></tr></thead>
+                <thead><tr><th>When</th><th>Game</th><th>Mode</th><th>Status</th><th>Score</th><th>Link</th></tr></thead>
                 <tbody>
                   ${data.recentRuns.map(r => `
                     <tr>
                       <td class="muted"><span title="${esc(r.createdAt)}">${esc(fmtWhen(r.createdAt))}</span></td>
+                      <td><span class="pill">${esc(r.gameId || '')}</span></td>
                       <td><span class="pill">${esc(r.mode)}</span></td>
-                      <td>${esc(r.status)}</td>
+                      <td>${r.status === 'running' ? '<span class="pill">RUNNING</span>' : esc(r.status)}</td>
                       <td>${esc(r.score)}</td>
-                      <td><a class="accent" href="/replay/${esc(r.id)}">Replay</a></td>
+                      <td>
+                        ${r.status === 'finished'
+                          ? `<a class="accent" href="/replay/${esc(r.id)}">Replay</a>`
+                          : (r.gameId === 'maze-runner'
+                            ? `<a class="accent" href="/spectate/${esc(r.id)}">Spectate</a>`
+                            : '<span class="muted">—</span>')}
+                      </td>
                     </tr>`).join('')}
                 </tbody>
               </table>`;

@@ -19,6 +19,7 @@ Server: http://localhost:3333
 ## UI (local)
 - Home: http://localhost:3333/
 - Replay: http://localhost:3333/replay/<runId>
+- Spectate (Maze Runner live): http://localhost:3333/spectate/<runId>
 - Donate: http://localhost:3333/donate
 
 ## API
@@ -48,6 +49,13 @@ curl -sX POST http://localhost:3333/api/runs/<runId>/action \
 ### Replay
 ```bash
 curl -s http://localhost:3333/api/runs/<runId>/replay | jq
+```
+
+### Spectate (SSE stream)
+Maze Runner runs persist `runs.state_json` while running. Spectators can subscribe via Server-Sent Events:
+
+```bash
+curl -N http://localhost:3333/api/spectate/<runId>/stream
 ```
 
 ### Leaderboard
