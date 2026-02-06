@@ -534,12 +534,23 @@
 
           const chipsEl = document.getElementById('chips');
           if (chipsEl) {
-            const chip = (k,v) => `<span class="chip2"><span class="k">${esc(k)}</span><span class="v">${esc(v)}</span></span>`;
+            const chip = (k, v, href) => href
+              ? `<a class="chip2" href="${esc(href)}"><span class="k">${esc(k)}</span><span class="v">${esc(v)}</span></a>`
+              : `<span class="chip2"><span class="k">${esc(k)}</span><span class="v">${esc(v)}</span></span>`;
+
+            // Fill in agentId/gameId links (from DB) to avoid relying on replay events.
+            let meta2 = null;
+            try { meta2 = await j(`/api/runs/${encodeURIComponent(runId)}/meta`); } catch {}
+            const agentId2 = meta2?.agentId || null;
+            const gameId2 = meta2?.gameId || gameId || null;
+
             const items = [
-              chip('Agent', agentName),
-              chip('Turns', String(turnsTotal))
+              chip('Agent', agentName, agentId2 ? `/agent/${encodeURIComponent(agentId2)}` : null),
+              chip('Turns', String(turnsTotal), null)
             ];
-            if (gameId) items.unshift(chip('Game', String(gameId)));
+
+            if (gameId2) items.unshift(chip('Game', String(gameId2), `/games/${encodeURIComponent(String(gameId2))}`));
+
             chipsEl.innerHTML = items.join('');
           }
 

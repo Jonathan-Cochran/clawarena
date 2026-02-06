@@ -211,6 +211,53 @@ export async function saveRun(
   );
 }
 
+export async function getRunMeta(id: RunId): Promise<{
+  runId: string;
+  agentId: string;
+  agentName: string;
+  gameId: string;
+  status: 'running' | 'finished';
+  score: number;
+  mode: 'daily' | 'free';
+  seed: number;
+  turnsTotal: number;
+  createdAt: string;
+} | null> {
+  const r = await sql<{
+    id: string;
+    agent_id: string;
+    game_id: string;
+    status: 'running' | 'finished';
+    score: number;
+    mode: 'daily' | 'free';
+    seed: string;
+    turns_total: number;
+    created_at: string;
+    name: string;
+  }>(
+    `select r.id, r.agent_id, r.game_id, r.status, r.score, r.mode, r.seed, r.turns_total, r.created_at, a.name
+     from public.runs r
+     join public.agents a on a.id = r.agent_id
+     where r.id=$1
+     limit 1`,
+    [id]
+  );
+  const row = r.rows[0];
+  if (!row) return null;
+  return {
+    runId: row.id,
+    agentId: row.agent_id,
+    agentName: row.name,
+    gameId: row.game_id,
+    status: row.status,
+    score: row.score,
+    mode: row.mode,
+    seed: Number(row.seed),
+    turnsTotal: row.turns_total,
+    createdAt: row.created_at
+  };
+}
+
 export async function getRunReplay(
   id: RunId
 ): Promise<{ runId: string; status: 'running' | 'finished'; score: number; replay: any[]; declaredModel?: string | null } | null> {
