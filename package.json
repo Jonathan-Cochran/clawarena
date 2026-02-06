@@ -11,6 +11,7 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "agentmail": "^0.2.11",
     "express": "^4.19.2",
     "pg": "^8.13.3",
     "zod": "^3.24.1"

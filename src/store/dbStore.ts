@@ -11,6 +11,8 @@ export type AgentRecord = {
   status: 'pending_claim' | 'claimed';
   createdAt: string;
   claimedAt?: string | null;
+  ownerEmail?: string | null;
+  ownerEmailVerifiedAt?: string | null;
 };
 
 function nowIso() {
@@ -57,6 +59,8 @@ export async function getAgentByApiKey(apiKey: string) {
     status: 'pending_claim' | 'claimed';
     created_at: string;
     claimed_at: string | null;
+    owner_email: string | null;
+    owner_email_verified_at: string | null;
   }>(
     `select * from public.agents where api_key = $1 limit 1`,
     [apiKey]
@@ -72,7 +76,9 @@ export async function getAgentByApiKey(apiKey: string) {
     verificationCode: row.verification_code,
     status: row.status,
     createdAt: row.created_at,
-    claimedAt: row.claimed_at
+    claimedAt: row.claimed_at,
+    ownerEmail: row.owner_email,
+    ownerEmailVerifiedAt: row.owner_email_verified_at
   } satisfies AgentRecord;
 }
 
@@ -218,6 +224,48 @@ export async function getLiveRunState(runId: RunId): Promise<{
     state,
     declaredModel: row.declared_model,
     declaredStack: row.declared_stack
+  };
+}
+
+export async function getSpectateSnapshot(runId: RunId): Promise<{
+  runId: string;
+  agentId: string;
+  gameId: string;
+  status: 'running' | 'finished';
+  updatedAt: string;
+  state: any | null;
+} | null> {
+  const r = await sql<{
+    id: string;
+    agent_id: string;
+    game_id: string;
+    status: 'running' | 'finished';
+    updated_at: string;
+    state_json: any;
+  }>(
+    `select id, agent_id, game_id, status, updated_at, state_json
+     from public.runs
+     where id=$1
+     limit 1`,
+    [runId]
+  );
+
+  const row = r.rows[0];
+  if (!row) return null;
+
+  const state = row.state_json
+    ? (typeof row.state_json === 'string' ? JSON.parse(row.state_json) : row.state_json)
+    : null;
+
+  const updatedAt = (row.updated_at as any) instanceof Date ? (row.updated_at as any as Date).toISOString() : String(row.updated_at);
+
+  return {
+    runId: row.id,
+    agentId: row.agent_id,
+    gameId: row.game_id,
+    status: row.status,
+    updatedAt,
+    state
   };
 }
 
@@ -411,8 +459,8 @@ export async function getAgentProfile(agentId: string) {
     [agentId]
   );
 
-  const recent = await sql<{ id: string; created_at: string; score: number; mode: string; seed: string; status: string }>(
-    `select id, created_at, score, mode, seed, status
+  const recent = await sql<{ id: string; created_at: string; score: number; mode: string; seed: string; status: string; game_id: string }>(
+    `select id, created_at, score, mode, seed, status, game_id
      from public.runs
      where agent_id=$1
      order by created_at desc
@@ -440,7 +488,219 @@ export async function getAgentProfile(agentId: string) {
       score: r.score,
       mode: r.mode,
       seed: Number(r.seed),
-      status: r.status
+      status: r.status,
+      gameId: r.game_id
     }))
   };
+}
+
+function randId(prefix: string) {
+  return `${prefix}_${randHex(18)}`;
+}
+
+function normalizeEmail(raw: string) {
+  const email = raw.trim().toLowerCase();
+  if (email.length < 6 || email.length > 254) throw new Error('invalid_email');
+  // conservative email validation
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('invalid_email');
+  return email;
+}
+
+export async function startOwnerEmailVerification(params: { agentId: string; email: string }) {
+  const email = normalizeEmail(params.email);
+  const id = randId('aev');
+  const code = `${Math.floor(100000 + Math.random() * 900000)}`; // 6 digits
+  const token = `aev_${randHex(32)}`;
+  const expiresMinutes = 30;
+
+  const r = await sql<{ expires_at: string }>(
+    `insert into public.agent_owner_email_verifications (id, agent_id, email, code, token, expires_at)
+     values ($1,$2,$3,$4,$5, now() + ($6 || ' minutes')::interval)
+     returning expires_at`,
+    [id, params.agentId, email, code, token, String(expiresMinutes)]
+  );
+
+  return { id, email, code, token, expiresAt: r.rows[0]!.expires_at };
+}
+
+export async function confirmOwnerEmailVerification(params: { agentId?: string; code?: string; token?: string }) {
+  const code = params.code?.trim() || null;
+  const token = params.token?.trim() || null;
+  if (!code && !token) throw new Error('missing_code_or_token');
+
+  const where: string[] = [];
+  const p: any[] = [];
+
+  if (token) {
+    p.push(token);
+    where.push(`token = $${p.length}`);
+  }
+  if (code) {
+    p.push(code);
+    where.push(`code = $${p.length}`);
+  }
+  if (params.agentId) {
+    p.push(params.agentId);
+    where.push(`agent_id = $${p.length}`);
+  }
+
+  const r = await sql<{ id: string; agent_id: string; email: string; expires_at: string; used_at: string | null }>(
+    `select id, agent_id, email, expires_at, used_at
+     from public.agent_owner_email_verifications
+     where ${where.join(' and ')}
+     order by created_at desc
+     limit 1`,
+    p
+  );
+
+  const v = r.rows[0];
+  if (!v) return { ok: false as const, error: 'not_found' as const };
+  if (v.used_at) return { ok: false as const, error: 'already_used' as const };
+  if (new Date(v.expires_at).getTime() < Date.now()) return { ok: false as const, error: 'expired' as const };
+
+  // Mark used then update agent.
+  await sql(`update public.agent_owner_email_verifications set used_at = now() where id=$1`, [v.id]);
+  await sql(`update public.agents set owner_email=$2, owner_email_verified_at=now() where id=$1`, [v.agent_id, v.email]);
+
+  return { ok: true as const, agentId: v.agent_id, email: v.email };
+}
+
+export type ChallengeRecord = {
+  id: string;
+  slug: string | null;
+  title: string;
+  status: string;
+  gameId: string;
+  startsAt: string;
+  endsAt: string;
+  entryDeadlineAt: string | null;
+  rulesMd: string | null;
+  prizePoolUsd: number | null;
+  prizeSplit: any | null;
+  sponsorName: string | null;
+};
+
+export async function listUpcomingChallenges(params?: { limit?: number }) {
+  const limit = Math.max(1, Math.min(50, params?.limit ?? 10));
+  const r = await sql<{
+    id: string;
+    slug: string | null;
+    title: string;
+    status: string;
+    game_id: string;
+    starts_at: string;
+    ends_at: string;
+    entry_deadline_at: string | null;
+    rules_md: string | null;
+    prize_pool_usd: string | null;
+    prize_split_json: any;
+    sponsor_name: string | null;
+  }>(
+    `select id, slug, title, status, game_id, starts_at, ends_at, entry_deadline_at, rules_md, prize_pool_usd, prize_split_json, sponsor_name
+     from public.challenges
+     where status='published' and ends_at > now()
+     order by starts_at asc
+     limit ${limit}`
+  );
+
+  return r.rows.map((c) => ({
+    id: c.id,
+    slug: c.slug,
+    title: c.title,
+    status: c.status,
+    gameId: c.game_id,
+    startsAt: c.starts_at,
+    endsAt: c.ends_at,
+    entryDeadlineAt: c.entry_deadline_at,
+    rulesMd: c.rules_md,
+    prizePoolUsd: c.prize_pool_usd != null ? Number(c.prize_pool_usd) : null,
+    prizeSplit: c.prize_split_json ?? null,
+    sponsorName: c.sponsor_name
+  })) satisfies ChallengeRecord[];
+}
+
+export async function getChallengeById(idOrSlug: string) {
+  const r = await sql<{
+    id: string;
+    slug: string | null;
+    title: string;
+    status: string;
+    game_id: string;
+    starts_at: string;
+    ends_at: string;
+    entry_deadline_at: string | null;
+    rules_md: string | null;
+    prize_pool_usd: string | null;
+    prize_split_json: any;
+    sponsor_name: string | null;
+  }>(
+    `select id, slug, title, status, game_id, starts_at, ends_at, entry_deadline_at, rules_md, prize_pool_usd, prize_split_json, sponsor_name
+     from public.challenges
+     where id=$1 or slug=$1
+     limit 1`,
+    [idOrSlug]
+  );
+  const c = r.rows[0];
+  if (!c) return null;
+  return {
+    id: c.id,
+    slug: c.slug,
+    title: c.title,
+    status: c.status,
+    gameId: c.game_id,
+    startsAt: c.starts_at,
+    endsAt: c.ends_at,
+    entryDeadlineAt: c.entry_deadline_at,
+    rulesMd: c.rules_md,
+    prizePoolUsd: c.prize_pool_usd != null ? Number(c.prize_pool_usd) : null,
+    prizeSplit: c.prize_split_json ?? null,
+    sponsorName: c.sponsor_name
+  } satisfies ChallengeRecord;
+}
+
+export async function createChallengeEntry(params: { challengeId: string; agentId: string; runId: string }) {
+  // Validate challenge window and run ownership.
+  const ch = await sql<{ id: string; status: string; starts_at: string; ends_at: string; entry_deadline_at: string | null; game_id: string }>(
+    `select id, status, starts_at, ends_at, entry_deadline_at, game_id from public.challenges where id=$1 limit 1`,
+    [params.challengeId]
+  );
+  const challenge = ch.rows[0];
+  if (!challenge) return { ok: false as const, error: 'challenge_not_found' as const };
+  if (challenge.status !== 'published') return { ok: false as const, error: 'challenge_not_open' as const };
+
+  const now = Date.now();
+  const starts = new Date(challenge.starts_at).getTime();
+  const ends = new Date(challenge.ends_at).getTime();
+  const deadline = challenge.entry_deadline_at ? new Date(challenge.entry_deadline_at).getTime() : null;
+  if (now < starts) return { ok: false as const, error: 'challenge_not_started' as const };
+  if (now > ends) return { ok: false as const, error: 'challenge_ended' as const };
+  if (deadline != null && now > deadline) return { ok: false as const, error: 'entry_deadline_passed' as const };
+
+  const rr = await sql<{ id: string; agent_id: string; game_id: string; status: string; score: number }>(
+    `select id, agent_id, game_id, status, score from public.runs where id=$1 limit 1`,
+    [params.runId]
+  );
+  const run = rr.rows[0];
+  if (!run) return { ok: false as const, error: 'run_not_found' as const };
+  if (run.agent_id !== params.agentId) return { ok: false as const, error: 'forbidden' as const };
+  if (run.status !== 'finished') return { ok: false as const, error: 'run_not_finished' as const };
+  if (run.game_id !== challenge.game_id) return { ok: false as const, error: 'wrong_game' as const };
+
+  const id = randId('ce');
+
+  try {
+    const ins = await sql<{ id: string; score: number; created_at: string }>(
+      `insert into public.challenge_entries (id, challenge_id, agent_id, run_id, score)
+       values ($1,$2,$3,$4,$5)
+       returning id, score, created_at`,
+      [id, params.challengeId, params.agentId, params.runId, run.score]
+    );
+    return { ok: true as const, entry: ins.rows[0]! };
+  } catch (e: any) {
+    const msg = String(e?.message ?? e);
+    if (msg.includes('unique') || msg.includes('duplicate')) {
+      return { ok: false as const, error: 'already_entered' as const };
+    }
+    throw e;
+  }
 }
