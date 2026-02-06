@@ -94,12 +94,12 @@ export async function getAgentByApiKey(apiKey: string) {
     created_at: string;
     claimed_at: string | null;
   }>(
-    // Prefer hash match when pepper is configured; fall back to legacy plaintext match.
-    // (We keep plaintext keys for now because only a couple exist; RLS will also prevent public leakage.)
+    // Prefer hash match when pepper is configured, but keep a temporary plaintext fallback.
+    // Reason: existing agents may not have api_key_hash populated yet; we backfill on successful auth.
     keyHash
-      ? `select * from public.agents where api_key_hash = $1 limit 1`
+      ? `select * from public.agents where api_key_hash = $1 or api_key = $2 limit 1`
       : `select * from public.agents where api_key = $1 limit 1`,
-    [keyHash ?? apiKey]
+    keyHash ? [keyHash, apiKey] : [apiKey]
   );
 
   const row = r.rows[0];
