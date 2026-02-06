@@ -169,11 +169,6 @@
         load();
       }
 
-      // Init tabs
-      setGame(game);
-      if (tabLobster) tabLobster.addEventListener('click', () => setGame('lobster-run'));
-      if (tabMaze) tabMaze.addEventListener('click', () => setGame('maze-runner'));
-
       const todayBtn = document.getElementById('today');
       const ydayBtn = document.getElementById('yesterday');
 
@@ -188,6 +183,11 @@
         load();
       });
       dateInput.addEventListener('change', load);
+
+      // Init tabs
+      setGame(game);
+      if (tabLobster) tabLobster.addEventListener('click', () => setGame('lobster-run'));
+      if (tabMaze) tabMaze.addEventListener('click', () => setGame('maze-runner'));
 
       async function load() {
         const date = dateInput.value;
