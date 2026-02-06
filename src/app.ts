@@ -11,6 +11,7 @@ import {
   getAgentProfile,
   updateAgentDescription,
   getRunReplay,
+  getLiveRunState,
   getStats,
   cleanupStaleRunningRuns,
   listLeaderboard,
@@ -431,8 +432,25 @@ app.get(`${V1}/runs/:runId/state`, a(async (req: express.Request, res: express.R
   const agent = await getAgentByApiKey(key);
   if (!agent) return res.status(401).json({ error: 'invalid_api_key' });
 
-  const active = activeRuns.get(req.params.runId);
-  if (!active) return res.status(404).json({ error: 'not_found' });
+  let active = activeRuns.get(req.params.runId);
+
+  // Serverless safety: if the request hits a different lambda than the one that created the run,
+  // fall back to DB-persisted live state.
+  if (!active) {
+    const live = await getLiveRunState(req.params.runId);
+    if (!live || live.status !== 'running' || !live.state) return res.status(404).json({ error: 'not_found' });
+    if (live.agentId !== agent.id) return res.status(403).json({ error: 'forbidden' });
+
+    active = {
+      gameId: live.gameId as any,
+      run: live.state,
+      agentId: live.agentId,
+      claimed: agent.status === 'claimed',
+      declaredModel: live.declaredModel,
+      declaredStack: live.declaredStack
+    };
+    activeRuns.set(req.params.runId, active);
+  }
 
   const run = active.run;
 
@@ -494,8 +512,25 @@ app.post(`${V1}/runs/:runId/action`, a(async (req: express.Request, res: express
   const agent = await getAgentByApiKey(key);
   if (!agent) return res.status(401).json({ error: 'invalid_api_key' });
 
-  const active = activeRuns.get(req.params.runId);
-  if (!active) return res.status(404).json({ error: 'not_found' });
+  let active = activeRuns.get(req.params.runId);
+
+  // Serverless safety: reload from DB if this lambda doesn't have the run in memory.
+  if (!active) {
+    const live = await getLiveRunState(req.params.runId);
+    if (!live || live.status !== 'running' || !live.state) return res.status(404).json({ error: 'not_found' });
+    if (live.agentId !== agent.id) return res.status(403).json({ error: 'forbidden' });
+
+    active = {
+      gameId: live.gameId as any,
+      run: live.state,
+      agentId: live.agentId,
+      claimed: agent.status === 'claimed',
+      declaredModel: live.declaredModel,
+      declaredStack: live.declaredStack
+    };
+    activeRuns.set(req.params.runId, active);
+  }
+
   const run = active.run;
 
   const body =

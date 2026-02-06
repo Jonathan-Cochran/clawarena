@@ -118,21 +118,26 @@ export async function saveRun(
   gameId: string,
   meta?: { declaredModel?: string | null; declaredStack?: string | null }
 ) {
-  // Upsert run record. We persist the replay_json only when finished to reduce writes.
+  // Upsert run record.
+  // - replay_json is only persisted when finished (reduces writes)
+  // - state_json is persisted for running runs so serverless instances can reload state
   const replayJson = state.status === 'finished' ? JSON.stringify(state.replay) : null;
   const finishedAt = state.status === 'finished' ? new Date().toISOString() : null;
+  const stateJson = state.status === 'running' ? JSON.stringify(state) : null;
 
   await sql(
-    `insert into public.runs (id, agent_id, game_id, mode, seed, turns_total, status, score, created_at, finished_at, replay_json, declared_model, declared_stack)
-     values ($1,$2,$3,$4,$5,$6,$7,$8, now(), $9, $10, $11, $12)
+    `insert into public.runs (id, agent_id, game_id, mode, seed, turns_total, status, score, created_at, finished_at, replay_json, state_json, declared_model, declared_stack, updated_at)
+     values ($1,$2,$3,$4,$5,$6,$7,$8, now(), $9, $10, $11, $12, $13, now())
      on conflict (id) do update set
        game_id = excluded.game_id,
        status = excluded.status,
        score = excluded.score,
        finished_at = coalesce(excluded.finished_at, public.runs.finished_at),
        replay_json = coalesce(excluded.replay_json, public.runs.replay_json),
+       state_json = case when excluded.status='finished' then null else coalesce(excluded.state_json, public.runs.state_json) end,
        declared_model = coalesce(public.runs.declared_model, excluded.declared_model),
-       declared_stack = coalesce(public.runs.declared_stack, excluded.declared_stack)`,
+       declared_stack = coalesce(public.runs.declared_stack, excluded.declared_stack),
+       updated_at = now()`,
     [
       state.id,
       agentId,
@@ -144,6 +149,7 @@ export async function saveRun(
       state.player.score,
       finishedAt,
       replayJson,
+      stateJson,
       meta?.declaredModel ?? null,
       meta?.declaredStack ?? null
     ]
@@ -158,15 +164,61 @@ export async function getRunReplay(
     status: 'running' | 'finished';
     score: number;
     replay_json: any;
+    state_json: any;
     declared_model: string | null;
   }>(
-    `select id, status, score, replay_json, declared_model from public.runs where id=$1 limit 1`,
+    `select id, status, score, replay_json, state_json, declared_model from public.runs where id=$1 limit 1`,
     [id]
   );
   const row = r.rows[0];
   if (!row) return null;
-  const replay = Array.isArray(row.replay_json) ? row.replay_json : row.replay_json ? JSON.parse(row.replay_json) : [];
+  let replay = Array.isArray(row.replay_json) ? row.replay_json : row.replay_json ? JSON.parse(row.replay_json) : [];
+  if ((!replay || replay.length === 0) && row.state_json) {
+    const state = typeof row.state_json === 'string' ? JSON.parse(row.state_json) : row.state_json;
+    if (state && Array.isArray(state.replay)) replay = state.replay;
+  }
   return { runId: row.id, status: row.status, score: row.score, replay, declaredModel: row.declared_model };
+}
+
+export async function getLiveRunState(runId: RunId): Promise<{
+  agentId: string;
+  gameId: string;
+  status: 'running' | 'finished';
+  state: any | null;
+  declaredModel: string | null;
+  declaredStack: string | null;
+} | null> {
+  const r = await sql<{
+    id: string;
+    agent_id: string;
+    game_id: string;
+    status: 'running' | 'finished';
+    state_json: any;
+    declared_model: string | null;
+    declared_stack: string | null;
+  }>(
+    `select id, agent_id, game_id, status, state_json, declared_model, declared_stack
+     from public.runs
+     where id=$1
+     limit 1`,
+    [runId]
+  );
+
+  const row = r.rows[0];
+  if (!row) return null;
+
+  const state = row.state_json
+    ? (typeof row.state_json === 'string' ? JSON.parse(row.state_json) : row.state_json)
+    : null;
+
+  return {
+    agentId: row.agent_id,
+    gameId: row.game_id,
+    status: row.status,
+    state,
+    declaredModel: row.declared_model,
+    declaredStack: row.declared_stack
+  };
 }
 
 export async function recordScore(entry: LeaderboardEntry, agentId: string, gameId: string) {
