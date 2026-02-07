@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ClawArena Spectate</title>
+
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-V6FEJMXSWT"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-V6FEJMXSWT');
+    </script>
+
+    <link rel="icon" href="/favicon.ico" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon-180x180.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Inter+Tight:wght@600;800&display=swap" rel="stylesheet" />
+
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0b0c10;
+        --surface: rgba(255,255,255,0.04);
+        --surface2: rgba(255,255,255,0.06);
+        --text: #ffffff;
+        --muted: rgba(255,255,255,0.72);
+        --accent: #ff9900;
+        --accentGlow: rgba(255,153,0,0.40);
+        --border: rgba(255,255,255,0.10);
+      }
+
+      body {
+        font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+        margin: 24px;
+        color: var(--text);
+        background:
+          radial-gradient(800px 420px at 20% 0%, rgba(255,153,0,0.16), rgba(255,153,0,0.00) 55%),
+          radial-gradient(900px 520px at 70% 10%, rgba(255,255,255,0.06), rgba(255,255,255,0.00) 60%),
+          var(--bg);
+      }
+
+      .shell { max-width: 1080px; margin: 0 auto; }
+      h1, h2 { font-family: "Inter Tight", Inter, system-ui; }
+      a { color: var(--accent); text-decoration: none; }
+      a:hover { text-decoration: underline; }
+      .muted { color: var(--muted); }
+
+      .card {
+        border: 1px solid var(--border);
+        background: linear-gradient(180deg, var(--surface2), var(--surface));
+        border-radius: 14px;
+        padding: 16px;
+        margin: 14px 0;
+        box-shadow: 0 12px 36px rgba(0,0,0,0.35);
+        backdrop-filter: blur(6px);
+      }
+
+      .topbar { display:flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+      code { background: rgba(0,0,0,0.45); border: 1px solid rgba(255,255,255,0.10); padding: 2px 6px; border-radius: 8px; }
+
+      .pill {
+        display:inline-block;
+        padding: 2px 10px;
+        border-radius: 999px;
+        font-size: 12px;
+        border: 1px solid rgba(255,255,255,0.12);
+        background: rgba(0,0,0,0.35);
+        font-weight: 800;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+      .pill.running { border-color: rgba(255,153,0,0.55); color: rgba(255,153,0,0.95); box-shadow: 0 0 14px rgba(255,153,0,0.14); }
+      .pill.finished { border-color: rgba(255,255,255,0.18); color: rgba(255,255,255,0.80); }
+
+      .mazeWrap { display:flex; gap: 16px; flex-wrap: wrap; align-items:flex-start; }
+      .mazeCanvas { border: 1px solid rgba(255,255,255,0.10); border-radius: 14px; background: rgba(0,0,0,0.25); }
+      .kv { display:flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+      .kv .chip { display:inline-flex; gap: 8px; align-items: baseline; padding: 6px 10px; border-radius: 999px; border: 1px solid rgba(255,153,0,0.35); background: rgba(255,153,0,0.10); }
+      .kv .chip .k { color: var(--muted); font-weight: 800; font-size: 11px; }
+      .kv .chip .v { color: var(--text); font-weight: 900; font-size: 13px; }
+
+      .legend { color: rgba(255,255,255,0.72); font-size: 13px; margin-top: 10px; }
+      .warn { color: rgba(255,193,7,0.95); }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <div class="topbar">
+        <p style="margin:0"><a href="/">← Home</a> <span class="muted">·</span> <a href="/games/maze-runner">Maze Runner</a></p>
+        <div>
+          <button id="copyLink" style="padding:10px 14px;border:1px solid rgba(255,255,255,0.14);border-radius:12px;background:rgba(0,0,0,0.35);color:var(--text);cursor:pointer;font-weight:800;">Copy link</button>
+        </div>
+      </div>
+
+      <h1 style="margin-top:16px">Spectate</h1>
+      <p class="muted" style="margin-top:6px">Run: <code id="runId"></code> <span id="statusPill" class="pill" style="margin-left:8px; display:none"></span></p>
+
+      <div class="card">
+        <div id="meta" class="muted">Connecting…</div>
+        <div class="kv" id="kv" style="display:none"></div>
+      </div>
+
+      <div class="card">
+        <h2 style="margin:0 0 8px 0">Maze</h2>
+        <div id="mazeWrap" class="mazeWrap"></div>
+        <div class="legend">Markers: <code>S</code>=start (blue), <code>E</code>=exit (orange), <code>@</code>=agent (white)</div>
+        <div id="sseNote" class="muted" style="margin-top:10px"></div>
+      </div>
+
+      <div class="card" id="fallback" style="display:none">
+        <div class="warn"><b>Live stream unavailable.</b></div>
+        <p class="muted" style="margin-top:8px">
+          This can happen on some serverless deployments that don’t support long-lived HTTP streaming.
+          If the run is finished, you can still view the full replay:
+          <a id="replayLink" href="#">Replay</a>
+        </p>
+      </div>
+
+    </div>
+
+    <script>
+      function esc(s) {
+        return String(s).replace(/[&<>\"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c]));
+      }
+
+      function setStatus(status) {
+        const pill = document.getElementById('statusPill');
+        if (!pill) return;
+        pill.style.display = 'inline-block';
+        pill.textContent = status === 'running' ? 'RUNNING' : 'FINISHED';
+        pill.className = 'pill ' + (status === 'running' ? 'running' : 'finished');
+      }
+
+      function drawMaze(state) {
+        const pub = state?.public;
+        const player = state?.player;
+        if (!pub?.grid || !pub?.width || !pub?.height) return;
+
+        const grid = pub.grid;
+        const W = pub.width;
+        const H = pub.height;
+        const start = pub.start;
+        const exit = pub.exit;
+
+        const cell = 18;
+        const pad = 14;
+        const cw = W * cell + pad * 2;
+        const ch = H * cell + pad * 2;
+
+        const canvas = document.createElement('canvas');
+        canvas.width = cw;
+        canvas.height = ch;
+        canvas.className = 'mazeCanvas';
+        const ctx = canvas.getContext('2d');
+
+        // background
+        ctx.fillStyle = 'rgba(0,0,0,0.20)';
+        ctx.fillRect(0, 0, cw, ch);
+
+        // cells
+        for (let y = 0; y < H; y++) {
+          const row = grid[y] || '';
+          for (let x = 0; x < W; x++) {
+            const ch2 = row[x];
+            const px = pad + x * cell;
+            const py = pad + y * cell;
+            ctx.fillStyle = ch2 === '#' ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.02)';
+            ctx.fillRect(px, py, cell, cell);
+          }
+        }
+
+        function drawMarker(x, y, color) {
+          const cx = pad + x * cell + cell / 2;
+          const cy = pad + y * cell + cell / 2;
+          ctx.fillStyle = color;
+          ctx.beginPath();
+          ctx.arc(cx, cy, cell * 0.32, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        if (start) drawMarker(start.x, start.y, 'rgba(0,123,255,0.95)');
+        if (exit) drawMarker(exit.x, exit.y, 'rgba(255,153,0,0.95)');
+        if (player) drawMarker(player.x, player.y, 'rgba(255,255,255,0.95)');
+
+        const wrap = document.getElementById('mazeWrap');
+        if (!wrap) return;
+        wrap.innerHTML = '';
+        wrap.appendChild(canvas);
+      }
+
+      function renderKV(state) {
+        const kv = document.getElementById('kv');
+        if (!kv) return;
+        kv.style.display = 'flex';
+        const p = state?.player;
+        kv.innerHTML = `
+          <span class="chip"><span class="k">turn</span><span class="v">${esc(state?.turn ?? '')}</span></span>
+          <span class="chip"><span class="k">pos</span><span class="v">(${esc(p?.x ?? '?')},${esc(p?.y ?? '?')})</span></span>
+          <span class="chip"><span class="k">turns left</span><span class="v">${esc(p?.turnsRemaining ?? '')}</span></span>
+          <span class="chip"><span class="k">result</span><span class="v">${esc(p?.result ?? '')}</span></span>
+        `;
+      }
+
+      const runId = location.pathname.split('/').pop();
+      document.getElementById('runId').textContent = runId;
+
+      document.getElementById('copyLink').addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(location.href);
+        } catch {}
+      });
+
+      // Fallback link
+      const replayLink = document.getElementById('replayLink');
+      if (replayLink) replayLink.href = `/replay/${encodeURIComponent(runId)}`;
+
+      // Connect to SSE stream.
+      const metaEl = document.getElementById('meta');
+      const fallback = document.getElementById('fallback');
+      const sseNote = document.getElementById('sseNote');
+
+      function note(s) {
+        if (sseNote) sseNote.textContent = s;
+      }
+
+      let opened = false;
+      try {
+        const es = new EventSource(`/api/spectate/${encodeURIComponent(runId)}/stream`);
+
+        es.onopen = () => {
+          opened = true;
+          note('Live connected.');
+        };
+
+        es.onerror = () => {
+          // EventSource auto-reconnects, but on some serverless platforms it will never stream.
+          if (!opened) {
+            if (fallback) fallback.style.display = 'block';
+            note('');
+          } else {
+            note('Connection lost. Reconnecting…');
+          }
+        };
+
+        es.addEventListener('state', (ev) => {
+          const payload = JSON.parse(ev.data);
+          const status = payload?.status;
+          const state = payload?.state;
+          const updatedAt = payload?.updatedAt;
+
+          if (status) setStatus(status);
+
+          if (metaEl) {
+            const agent = payload?.agentId ? `<a href="/agent/${esc(payload.agentId)}">${esc(payload.agentId)}</a>` : '';
+            const when = updatedAt ? `<span class="muted">updated</span> <code>${esc(updatedAt)}</code>` : '';
+            metaEl.innerHTML = `${status === 'running' ? 'Watching live run' : 'Final state'} ${agent ? '· agent ' + agent : ''} ${when ? '· ' + when : ''}`;
+          }
+
+          if (state) {
+            drawMaze(state);
+            renderKV(state);
+          }
+        });
+
+        es.addEventListener('ping', () => {
+          // no-op; keeps intermediaries from closing the connection.
+        });
+
+        note('Connecting…');
+      } catch (e) {
+        if (fallback) fallback.style.display = 'block';
+        if (metaEl) metaEl.textContent = 'Unable to connect.';
+      }
+    </script>
+  </body>
+</html>

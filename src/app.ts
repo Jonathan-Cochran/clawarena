@@ -12,6 +12,7 @@ import {
   updateAgentDescription,
   getRunReplay,
   getLiveRunState,
+  getSpectateSnapshot,
   getStats,
   cleanupStaleRunningRuns,
   listLeaderboard,
@@ -110,6 +111,7 @@ app.get('/messaging', (_req, res) => res.redirect(302, '/MESSAGING.md'));
 app.get('/claim/:token', (_req, res) => sendHtml(res, 'claim.html'));
 app.get('/agent/:agentId', (_req, res) => sendHtml(res, 'agent.html'));
 app.get('/replay/:runId', (_req, res) => sendHtml(res, 'replay.html'));
+app.get('/spectate/:runId', (_req, res) => sendHtml(res, 'spectate.html'));
 
 app.get('/healthz', (_req, res) => res.json({ ok: true }));
 
@@ -644,6 +646,91 @@ app.get('/api/runs/:runId/replay', a(async (req: express.Request, res: express.R
   const saved = await getRunReplay(req.params.runId);
   if (!saved) return res.status(404).json({ error: 'not_found' });
   return res.json({ runId: saved.runId, status: saved.status, replay: saved.replay, score: saved.score, declaredModel: saved.declaredModel ?? null });
+}));
+
+// Live spectate via Server-Sent Events (SSE)
+// Note: Some serverless platforms may not support long-lived streaming; the UI has a fallback.
+app.get('/api/spectate/:runId/stream', a(async (req: express.Request, res: express.Response) => {
+  const runId = req.params.runId;
+
+  res.status(200);
+  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  // Helps nginx-style proxies.
+  res.setHeader('X-Accel-Buffering', 'no');
+  (res as any).flushHeaders?.();
+
+  function send(event: string, data: any) {
+    res.write(`event: ${event}\n`);
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+  }
+
+  let lastUpdatedAt: string | null | undefined = undefined;
+  let closed = false;
+
+  const poll = async () => {
+    if (closed) return;
+
+    // Prefer in-memory run when available (local dev), otherwise DB snapshot.
+    const active = activeRuns.get(runId);
+    if (active) {
+      const run = active.run;
+      send('state', {
+        runId,
+        agentId: active.agentId,
+        status: run.status,
+        updatedAt: new Date().toISOString(),
+        state: run
+      });
+      if (run.status === 'finished') {
+        res.end();
+        closed = true;
+      }
+      return;
+    }
+
+    const snap = await getSpectateSnapshot(runId);
+    if (!snap) {
+      send('state', { runId, status: 'finished', updatedAt: null, state: null, error: 'not_found' });
+      res.end();
+      closed = true;
+      return;
+    }
+
+    // Only emit when updated_at changes (or first time). If updated_at is null, emit once.
+    const shouldEmit = lastUpdatedAt === undefined || (snap.updatedAt && snap.updatedAt !== lastUpdatedAt) || (!snap.updatedAt && lastUpdatedAt !== null);
+    if (shouldEmit) {
+      lastUpdatedAt = snap.updatedAt;
+      send('state', { runId, agentId: snap.agentId, status: snap.status, updatedAt: snap.updatedAt, state: snap.state });
+    }
+
+    if (snap.status === 'finished') {
+      res.end();
+      closed = true;
+    }
+  };
+
+  const pingTimer = setInterval(() => {
+    if (closed) return;
+    // Keep intermediaries from closing idle connections.
+    send('ping', { t: Date.now() });
+  }, 15000);
+
+  const pollTimer = setInterval(() => {
+    poll().catch(() => {
+      // ignore; client will reconnect
+    });
+  }, 800);
+
+  // Send an initial state ASAP.
+  await poll();
+
+  req.on('close', () => {
+    closed = true;
+    clearInterval(pingTimer);
+    clearInterval(pollTimer);
+  });
 }));
 
 export default app;
