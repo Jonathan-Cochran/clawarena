@@ -136,7 +136,16 @@
         pill.className = 'pill ' + (status === 'running' ? 'running' : 'finished');
       }
 
-      function drawMaze(state) {
+      function extractTrail(state) {
+        const replay = state?.replay;
+        if (!Array.isArray(replay)) return [];
+        const steps = replay
+          .filter(e => e && e.kind === 'MAZE_TURN_RESOLVED' && e.snapshot && typeof e.snapshot.x === 'number' && typeof e.snapshot.y === 'number')
+          .map(e => ({ x: e.snapshot.x, y: e.snapshot.y }));
+        return steps;
+      }
+
+      function drawMaze(state, trail, overridePos) {
         const pub = state?.public;
         const player = state?.player;
         if (!pub?.grid || !pub?.width || !pub?.height) return;
@@ -174,18 +183,39 @@
           }
         }
 
-        function drawMarker(x, y, color) {
+        function drawMarker(x, y, color, r=cell*0.32) {
           const cx = pad + x * cell + cell / 2;
           const cy = pad + y * cell + cell / 2;
           ctx.fillStyle = color;
           ctx.beginPath();
-          ctx.arc(cx, cy, cell * 0.32, 0, Math.PI * 2);
+          ctx.arc(cx, cy, r, 0, Math.PI * 2);
           ctx.fill();
         }
 
+        // Trail (like replay): faint dots + a connecting line.
+        if (Array.isArray(trail) && trail.length) {
+          ctx.strokeStyle = 'rgba(255,255,255,0.22)';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          for (let i = 0; i < trail.length; i++) {
+            const t = trail[i];
+            const cx = pad + t.x * cell + cell / 2;
+            const cy = pad + t.y * cell + cell / 2;
+            if (i === 0) ctx.moveTo(cx, cy);
+            else ctx.lineTo(cx, cy);
+          }
+          ctx.stroke();
+
+          for (const t of trail) {
+            drawMarker(t.x, t.y, 'rgba(255,255,255,0.28)', cell*0.16);
+          }
+        }
+
+        const pos = overridePos || (player ? {x: player.x, y: player.y} : null);
+
         if (start) drawMarker(start.x, start.y, 'rgba(0,123,255,0.95)');
         if (exit) drawMarker(exit.x, exit.y, 'rgba(255,153,0,0.95)');
-        if (player) drawMarker(player.x, player.y, 'rgba(255,255,255,0.95)');
+        if (pos) drawMarker(pos.x, pos.y, 'rgba(255,255,255,0.95)');
 
         const wrap = document.getElementById('mazeWrap');
         if (!wrap) return;
@@ -224,6 +254,36 @@
       const fallback = document.getElementById('fallback');
       const sseNote = document.getElementById('sseNote');
 
+      // Smooth animation: the backend only emits the latest state at its polling interval,
+      // so we animate through any skipped trail steps client-side.
+      let currentTrail = [];
+      let animQueue = [];
+      let animPos = null;
+      let animTimer = null;
+      let redirecting = false;
+
+      function stopAnim() {
+        if (animTimer) clearInterval(animTimer);
+        animTimer = null;
+        animQueue = [];
+      }
+
+      function startAnim(state, trail) {
+        // Append any new points to a queue.
+        if (!Array.isArray(trail)) trail = [];
+        const startIdx = currentTrail.length;
+        for (let i = startIdx; i < trail.length; i++) animQueue.push(trail[i]);
+        currentTrail = trail;
+
+        if (animTimer) return;
+        animTimer = setInterval(() => {
+          if (!animQueue.length) return;
+          animPos = animQueue.shift();
+          drawMaze(state, currentTrail, animPos);
+          renderKV(state);
+        }, 120);
+      }
+
       function note(s) {
         if (sseNote) sseNote.textContent = s;
       }
@@ -238,6 +298,7 @@
         };
 
         es.onerror = () => {
+          if (redirecting) return;
           // EventSource auto-reconnects, but on some serverless platforms it will never stream.
           if (!opened) {
             if (fallback) fallback.style.display = 'block';
@@ -262,8 +323,25 @@
           }
 
           if (state) {
-            drawMaze(state);
-            renderKV(state);
+            const trail = extractTrail(state);
+            // Always render at least once immediately.
+            if (!currentTrail.length) {
+              currentTrail = trail;
+              animPos = trail.length ? trail[trail.length - 1] : null;
+              drawMaze(state, currentTrail, animPos);
+              renderKV(state);
+            }
+            startAnim(state, trail);
+          }
+
+          if (status === 'finished') {
+            redirecting = true;
+            stopAnim();
+            note('Finished. Opening replay…');
+            try { es.close(); } catch {}
+            setTimeout(() => {
+              window.location.replace(`/replay/${encodeURIComponent(runId)}`);
+            }, 600);
           }
         });
 

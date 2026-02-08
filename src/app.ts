@@ -721,7 +721,7 @@ app.get('/api/spectate/:runId/stream', a(async (req: express.Request, res: expre
     poll().catch(() => {
       // ignore; client will reconnect
     });
-  }, 800);
+  }, 300);
 
   // Send an initial state ASAP.
   await poll();
