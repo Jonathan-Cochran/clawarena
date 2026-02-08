@@ -192,22 +192,14 @@
           ctx.fill();
         }
 
-        // Trail (like replay): faint dots + a connecting line.
+        // Trail (match replay style): last 30 turns as small squares.
         if (Array.isArray(trail) && trail.length) {
-          ctx.strokeStyle = 'rgba(255,255,255,0.22)';
-          ctx.lineWidth = 2;
-          ctx.beginPath();
-          for (let i = 0; i < trail.length; i++) {
-            const t = trail[i];
-            const cx = pad + t.x * cell + cell / 2;
-            const cy = pad + t.y * cell + cell / 2;
-            if (i === 0) ctx.moveTo(cx, cy);
-            else ctx.lineTo(cx, cy);
-          }
-          ctx.stroke();
-
-          for (const t of trail) {
-            drawMarker(t.x, t.y, 'rgba(255,255,255,0.28)', cell*0.16);
+          const last30 = trail.slice(-30);
+          ctx.fillStyle = 'rgba(255,255,255,0.12)';
+          for (const t of last30) {
+            const px = pad + t.x * cell + cell * 0.40;
+            const py = pad + t.y * cell + cell * 0.40;
+            ctx.fillRect(px, py, cell * 0.20, cell * 0.20);
           }
         }
 
