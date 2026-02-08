@@ -276,6 +276,40 @@ export async function getLiveRunState(runId: RunId): Promise<{
   };
 }
 
+export async function getSpectateSnapshot(runId: RunId): Promise<{
+  agentId: string;
+  status: 'running' | 'finished';
+  updatedAt: string | null;
+  state: any | null;
+} | null> {
+  const r = await sql<{
+    agent_id: string;
+    status: 'running' | 'finished';
+    updated_at: string | null;
+    state_json: any;
+  }>(
+    `select agent_id, status, updated_at, state_json
+     from public.runs
+     where id=$1
+     limit 1`,
+    [runId]
+  );
+
+  const row = r.rows[0];
+  if (!row) return null;
+
+  const state = row.state_json
+    ? (typeof row.state_json === 'string' ? JSON.parse(row.state_json) : row.state_json)
+    : null;
+
+  return {
+    agentId: row.agent_id,
+    status: row.status,
+    updatedAt: row.updated_at,
+    state
+  };
+}
+
 export async function recordScore(entry: LeaderboardEntry, agentId: string, gameId: string) {
   await sql(
     `insert into public.leaderboard_entries (game_id, mode, run_id, agent_id, score, seed)
