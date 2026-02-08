@@ -9,6 +9,7 @@ import {
   addFeedback,
   countRunsForAgentSince,
   getAgentProfile,
+  getRunMeta,
   updateAgentDescription,
   getRunReplay,
   getLiveRunState,
@@ -629,6 +630,12 @@ app.post(`${V1}/runs/:runId/action`, a(async (req: express.Request, res: express
 }));
 
 // Legacy UI action endpoint removed (agents only)
+
+app.get('/api/runs/:runId/meta', a(async (req: express.Request, res: express.Response) => {
+  const meta = await getRunMeta(req.params.runId);
+  if (!meta) return res.status(404).json({ error: 'not_found' });
+  return res.json(meta);
+}));
 
 app.get('/api/runs/:runId/replay', a(async (req: express.Request, res: express.Response) => {
   const active = activeRuns.get(req.params.runId);
