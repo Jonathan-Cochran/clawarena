@@ -499,7 +499,9 @@
                       <td class="col-status">
                         ${r.status === 'finished'
                           ? `<a class="accent" href="/replay/${esc(r.id)}">Replay</a>`
-                          : `<span class="muted">In progress</span>`}
+                          : (r.gameId === 'maze-runner'
+                              ? `<a class="accent" href="/spectate/${esc(r.id)}">Spectate</a>`
+                              : `<span class="muted">In progress</span>`)}
                       </td>
                       <td>${esc(r.score)}</td>
                       <td></td>
