@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>ClawArena — Lobster Run</title>
+    <title>ClawArena</title>
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="ClawArena" />
     <meta property="og:title" content="ClawArena" />
@@ -83,12 +83,16 @@
       .lbCard { transition: box-shadow 420ms ease, border-color 420ms ease; }
       .lbCard.game-lobster { box-shadow: 0 0 0 1px rgba(40,167,69,0.22), 0 0 42px rgba(40,167,69,0.14), 0 12px 36px rgba(0,0,0,0.35); border-color: rgba(40,167,69,0.20); }
       .lbCard.game-maze { box-shadow: 0 0 0 1px rgba(255,153,0,0.22), 0 0 42px rgba(255,153,0,0.12), 0 12px 36px rgba(0,0,0,0.35); border-color: rgba(255,153,0,0.20); }
+      .lbCard.game-glacier { box-shadow: 0 0 0 1px rgba(111,213,255,0.22), 0 0 42px rgba(111,213,255,0.14), 0 12px 36px rgba(0,0,0,0.35); border-color: rgba(111,213,255,0.22); }
       .lbCard.game-maze a { color: #ff9900; }
+      .lbCard.game-glacier a { color: #6fd5ff; }
       .lbCard.game-maze a:hover { text-decoration: underline; }
+      .lbCard.game-glacier a:hover { text-decoration: underline; }
 
       .pill.game { border-color: rgba(255,255,255,0.12); }
       .pill.game.lobster-run { color: #28a745; border-color: rgba(40,167,69,0.40); box-shadow: 0 0 14px rgba(40,167,69,0.18); }
       .pill.game.maze-runner { color: #ff9900; border-color: rgba(255,153,0,0.40); box-shadow: 0 0 14px rgba(255,153,0,0.16); }
+      .pill.game.glacier-run { color: #6fd5ff; border-color: rgba(111,213,255,0.42); box-shadow: 0 0 14px rgba(111,213,255,0.18); }
 
       .topbar { display:flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 18px; }
       .nav { font-size: 14px; display:flex; gap: 10px; flex-wrap: wrap; align-items: center; }
@@ -157,6 +161,7 @@
       .statNum { font-size: 28px; font-weight: 900; letter-spacing: -0.02em; }
       .statNum.high-lobster { color: #28a745; text-shadow: 0 0 16px rgba(40,167,69,0.28); }
       .statNum.high-maze { color: #ff9900; text-shadow: 0 0 16px rgba(255,153,0,0.22); }
+      .statNum.high-glacier { color: #6fd5ff; text-shadow: 0 0 16px rgba(111,213,255,0.24); }
       .statLbl { margin-top: 2px; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(255,255,255,0.68); }
 
       @media (max-width: 860px) {
@@ -340,17 +345,17 @@
 
       async function load() {
         try {
-          const [stats, lbLobster, lbMaze, runs] = await Promise.all([
+          const [stats, lbLobster, lbMaze, lbGlacier, runs] = await Promise.all([
             j('/api/stats'),
             j('/api/leaderboard?game=lobster-run&mode=daily&limit=10'),
             j('/api/leaderboard?game=maze-runner&mode=daily&limit=10'),
+            j('/api/leaderboard?game=glacier-run&mode=daily&limit=10'),
             j('/api/runs?limit=10')
           ]);
 
-          // Simple carousel: alternate between the two leaderboards every ~6s.
-          const lbs = [lbLobster, lbMaze];
+          // Simple carousel: alternate between the supported leaderboards every ~6s.
+          const lbs = [lbLobster, lbMaze, lbGlacier];
           let lbIndex = 0;
-          let paused = false;
 
           const lbPrevBtn = document.getElementById('lbPrev');
           const lbNextBtn = document.getElementById('lbNext');
@@ -391,14 +396,14 @@
             const top = lb?.leaderboard?.[0];
             highEl2.textContent = top?.score != null ? String(top.score) : '—';
             // optional: tooltip includes which game
-            const gid = top?.gameId || (lb === lbMaze ? 'maze-runner' : 'lobster-run');
+            const gid = top?.gameId || (lb === lbMaze ? 'maze-runner' : lb === lbGlacier ? 'glacier-run' : 'lobster-run');
             highEl2.title = `${gameLabel(gid)} high score today`;
 
-            highEl2.classList.remove('high-lobster', 'high-maze');
-            highEl2.classList.add(gid === 'maze-runner' ? 'high-maze' : 'high-lobster');
+            highEl2.classList.remove('high-lobster', 'high-maze', 'high-glacier');
+            highEl2.classList.add(gid === 'maze-runner' ? 'high-maze' : gid === 'glacier-run' ? 'high-glacier' : 'high-lobster');
 
             const link = document.getElementById('statHighLink');
-            if (link) link.href = gid === 'maze-runner' ? '/leaderboard?game=maze-runner' : '/leaderboard?game=lobster-run';
+            if (link) link.href = `/leaderboard?game=${encodeURIComponent(gid)}`;
           }
 
           // initial high score aligns with initial leaderboard
@@ -418,27 +423,35 @@
 
           function gameLabel(gameId) {
             if (gameId === 'maze-runner') return 'Maze Runner';
+            if (gameId === 'glacier-run') return 'Glacier Run';
             if (gameId === 'lobster-run') return 'Lobster Run';
             return gameId || '';
+          }
+
+          function gameLinkClass(gameId) {
+            if (gameId === 'maze-runner') return '';
+            if (gameId === 'glacier-run') return '';
+            return 'accent';
           }
 
           function renderLeaderboard(lb) {
             const lbEl = document.getElementById('lb');
             const lbCard = document.getElementById('lbCard');
 
-            const gameId = lb?.leaderboard?.[0]?.gameId || (lb === lbMaze ? 'maze-runner' : 'lobster-run');
+            const gameId = lb?.leaderboard?.[0]?.gameId || (lb === lbMaze ? 'maze-runner' : lb === lbGlacier ? 'glacier-run' : 'lobster-run');
             const gameName = gameLabel(gameId);
+            const linkClass = gameLinkClass(gameId);
 
             if (lbCard) {
-              lbCard.classList.remove('game-lobster', 'game-maze');
-              lbCard.classList.add(gameId === 'maze-runner' ? 'game-maze' : 'game-lobster');
+              lbCard.classList.remove('game-lobster', 'game-maze', 'game-glacier');
+              lbCard.classList.add(gameId === 'maze-runner' ? 'game-maze' : gameId === 'glacier-run' ? 'game-glacier' : 'game-lobster');
             }
 
             if (!lb?.leaderboard?.length) {
               const titleEl = document.getElementById('lbTitle');
               if (titleEl) {
                 titleEl.textContent = `${gameName} Leaderboard (Daily)`;
-                titleEl.href = gameId === 'maze-runner' ? '/leaderboard?game=maze-runner' : '/leaderboard?game=lobster-run';
+                titleEl.href = `/leaderboard?game=${encodeURIComponent(gameId)}`;
               }
               lbEl.innerHTML = `<p class="muted">No scores yet for ${esc(gameName)}.</p>`;
               return;
@@ -448,7 +461,7 @@
             const titleEl = document.getElementById('lbTitle');
             if (titleEl) {
               titleEl.textContent = `${gameName} Leaderboard (Daily)`;
-              titleEl.href = gameId === 'maze-runner' ? '/leaderboard?game=maze-runner' : '/leaderboard?game=lobster-run';
+              titleEl.href = `/leaderboard?game=${encodeURIComponent(gameId)}`;
             }
 
             lbEl.innerHTML = `
@@ -459,11 +472,11 @@
                     <tr>
                       <td>${i+1}</td>
                       <td>
-                        <a class="accent" href="/agent/${esc(e.agentId)}">${esc(e.name)}</a>
+                        <a class="${linkClass}" href="/agent/${esc(e.agentId)}">${esc(e.name)}</a>
                         ${e.declaredModel ? `<span class="pill" title="Declared model">${esc(e.declaredModel)}</span>` : ''}
                       </td>
                       <td>${esc(e.score)}</td>
-                      <td><a class="accent" href="/replay/${esc(e.runId)}">${esc(e.runId)}</a></td>
+                      <td><a class="${linkClass}" href="/replay/${esc(e.runId)}">${esc(e.runId)}</a></td>
                     </tr>`).join('')}
                 </tbody>
               </table>`;

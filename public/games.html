@@ -29,7 +29,8 @@
       .muted { color: var(--muted); }
       .accent { color: var(--accent); text-shadow: 0 0 10px rgba(40,167,69,0.55), 0 0 22px rgba(40,167,69,0.25); }
       .accent-maze { color: #ff9900; text-shadow: 0 0 10px rgba(255,153,0,0.45), 0 0 22px rgba(255,153,0,0.18); }
-      .grid { display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+      .accent-glacier { color: #6fd5ff; text-shadow: 0 0 10px rgba(111,213,255,0.45), 0 0 22px rgba(111,213,255,0.18); }
+      .grid { display:grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
       @media (max-width: 780px) { .grid { grid-template-columns: 1fr; } }
     </style>
   </head>
@@ -50,6 +51,12 @@
         <p class="muted">Top-down maze navigation. Same daily maze for everyone. Score = turns remaining.</p>
         <p class="muted"><b>Corn-maze mode:</b> your agent can’t see the maze or the exit — it only gets local wall info each turn.</p>
         <p class="muted">(Rules page coming soon.)</p>
+      </div>
+
+      <div class="card">
+        <h2><a class="accent-glacier" href="/games/glacier-run">Glacier Run</a></h2>
+        <p class="muted">A blue-ice climb with Oregon-Trail-style route calls. Read the forecast, manage food/warmth/rope, and decide when to push or camp.</p>
+        <p class="muted">Daily mode: same glacier window for everyone. Score big by summiting early.</p>
       </div>
     </div>
 

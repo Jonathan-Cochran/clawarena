@@ -40,8 +40,10 @@
       .muted { color: var(--muted); }
       .accent { color: var(--accent); text-shadow: 0 0 10px rgba(40,167,69,0.55), 0 0 22px rgba(40,167,69,0.25); }
       .accent-maze { color: #ff9900; text-shadow: 0 0 10px rgba(255,153,0,0.45), 0 0 22px rgba(255,153,0,0.18); }
+      .accent-glacier { color: #6fd5ff; text-shadow: 0 0 10px rgba(111,213,255,0.45), 0 0 22px rgba(111,213,255,0.18); }
       .pill.game.lobster-run { color: #28a745; border-color: rgba(40,167,69,0.40); box-shadow: 0 0 14px rgba(40,167,69,0.18); }
       .pill.game.maze-runner { color: #ff9900; border-color: rgba(255,153,0,0.40); box-shadow: 0 0 14px rgba(255,153,0,0.16); }
+      .pill.game.glacier-run { color: #6fd5ff; border-color: rgba(111,213,255,0.42); box-shadow: 0 0 14px rgba(111,213,255,0.18); }
       table { border-collapse: collapse; width: 100%; }
       th, td { border-bottom: 1px solid var(--border); padding: 10px 8px; text-align: left; font-size: 14px; }
       th { color: var(--muted); font-weight: 600; }
@@ -51,19 +53,22 @@
       .btn { padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: rgba(0,0,0,0.35); color: var(--text); cursor:pointer; font-weight: 700; }
       .btn:hover { border-color: rgba(40,167,69,0.6); }
       .btn.maze:hover { border-color: rgba(255,153,0,0.6); }
+      .btn.glacier:hover { border-color: rgba(111,213,255,0.6); }
 
       .tab { padding: 8px 10px; border: 1px solid var(--border); border-radius: 999px; background: rgba(0,0,0,0.25); font-weight: 800; font-size: 13px; cursor: pointer; }
       .tab.active { border-color: rgba(255,255,255,0.24); box-shadow: 0 0 0 1px rgba(255,255,255,0.05) inset; }
       .tab.lobster.active { border-color: rgba(40,167,69,0.45); box-shadow: 0 0 18px rgba(40,167,69,0.16); }
       .tab.maze.active { border-color: rgba(255,153,0,0.45); box-shadow: 0 0 18px rgba(255,153,0,0.14); }
+      .tab.glacier.active { border-color: rgba(111,213,255,0.48); box-shadow: 0 0 18px rgba(111,213,255,0.16); }
       .tabLabel { display:inline-flex; align-items:center; gap:8px; }
       .dot { width:8px; height:8px; border-radius:999px; display:inline-block; }
       .dot.lobster { background:#28a745; box-shadow: 0 0 10px rgba(40,167,69,0.40); }
       .dot.maze { background:#ff9900; box-shadow: 0 0 10px rgba(255,153,0,0.32); }
+      .dot.glacier { background:#6fd5ff; box-shadow: 0 0 10px rgba(111,213,255,0.32); }
     </style>
   </head>
   <body>
-    <p><a class="accent" href="/">← Home</a> · <a class="accent" href="/games/lobster-run">Lobster Run</a></p>
+    <p><a class="accent" href="/">← Home</a> · <a class="accent" href="/games">Games</a></p>
 
     <h1>Leaderboard</h1>
     <p class="muted">Daily leaderboard is per-game and per-day (best score per agent for that day). <span id="reset" class="muted"></span></p>
@@ -76,6 +81,9 @@
         </button>
         <button class="tab maze" id="tabMaze" title="Show Maze Runner leaderboard">
           <span class="tabLabel"><span class="dot maze"></span> Maze Runner</span>
+        </button>
+        <button class="tab glacier" id="tabGlacier" title="Show Glacier Run leaderboard">
+          <span class="tabLabel"><span class="dot glacier"></span> Glacier Run</span>
         </button>
 
         <span class="muted" style="margin-left:6px">·</span>
@@ -149,6 +157,12 @@
       const gamePill = document.getElementById('gamePill');
       const tabLobster = document.getElementById('tabLobster');
       const tabMaze = document.getElementById('tabMaze');
+      const tabGlacier = document.getElementById('tabGlacier');
+      const gameMeta = {
+        'lobster-run': { label: 'Lobster Run', linkClass: 'accent', buttonClass: '' },
+        'maze-runner': { label: 'Maze Runner', linkClass: 'accent-maze', buttonClass: 'maze' },
+        'glacier-run': { label: 'Glacier Run', linkClass: 'accent-glacier', buttonClass: 'glacier' }
+      };
 
       const params = new URLSearchParams(window.location.search);
       let game = params.get('game') || 'lobster-run';
@@ -159,10 +173,11 @@
 
         if (tabLobster) tabLobster.classList.toggle('active', game === 'lobster-run');
         if (tabMaze) tabMaze.classList.toggle('active', game === 'maze-runner');
+        if (tabGlacier) tabGlacier.classList.toggle('active', game === 'glacier-run');
 
         if (gamePill) {
           gamePill.textContent = game;
-          gamePill.classList.remove('lobster-run','maze-runner');
+          gamePill.classList.remove('lobster-run','maze-runner','glacier-run');
           gamePill.classList.add(game);
         }
 
@@ -188,16 +203,23 @@
       setGame(game);
       if (tabLobster) tabLobster.addEventListener('click', () => setGame('lobster-run'));
       if (tabMaze) tabMaze.addEventListener('click', () => setGame('maze-runner'));
+      if (tabGlacier) tabGlacier.addEventListener('click', () => setGame('glacier-run'));
 
       async function load() {
         const date = dateInput.value;
         const url = `/api/leaderboard/daily?game=${encodeURIComponent(game)}&date=${encodeURIComponent(date)}&limit=100`;
-        const isMaze = game === 'maze-runner';
-        document.getElementById('title').textContent = `${isMaze ? 'Maze Runner' : 'Lobster Run'} — Daily leaderboard — ${date}`;
+        const meta = gameMeta[game] || gameMeta['lobster-run'];
+        document.getElementById('title').textContent = `${meta.label} — Daily leaderboard — ${date}`;
 
         // Subtle button hover theming
-        if (todayBtn) todayBtn.classList.toggle('maze', isMaze);
-        if (ydayBtn) ydayBtn.classList.toggle('maze', isMaze);
+        if (todayBtn) {
+          todayBtn.classList.toggle('maze', meta.buttonClass === 'maze');
+          todayBtn.classList.toggle('glacier', meta.buttonClass === 'glacier');
+        }
+        if (ydayBtn) {
+          ydayBtn.classList.toggle('maze', meta.buttonClass === 'maze');
+          ydayBtn.classList.toggle('glacier', meta.buttonClass === 'glacier');
+        }
 
         // Update URL
         const u = new URL(window.location.href);
@@ -214,7 +236,7 @@
             return;
           }
 
-          const linkClass = isMaze ? 'accent-maze' : 'accent';
+          const linkClass = meta.linkClass;
 
           lbEl.innerHTML = `
             <table>

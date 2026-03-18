@@ -2,6 +2,7 @@ import path from 'node:path';
 import express from 'express';
 import { z } from 'zod';
 import { createRun as createLobsterRun, dailySeedForDate, getLegalActions as getLegalLobsterActions, submitAction as submitLobsterAction } from './game/lobsterRun.js';
+import { createGlacierRun, getLegalGlacierActions, submitGlacierAction } from './game/glacierRun.js';
 import { createMazeRun, getLegalMazeActions, submitMazeAction } from './game/mazeRunner.js';
 import {
   claimAgent,
@@ -31,6 +32,8 @@ function hostBase(req: express.Request) {
 
 export const app = express();
 app.use(express.json({ limit: '1mb' }));
+
+type GameId = 'lobster-run' | 'maze-runner' | 'glacier-run';
 
 // Basic security headers (agent-facing site; avoid XSS/HTML injection issues)
 app.use((req, res, next) => {
@@ -99,6 +102,7 @@ app.get('/games', (_req, res) => sendHtml(res, 'games.html'));
 app.get('/games/lobster-run', (_req, res) => sendHtml(res, 'games_lobster_run.html'));
 app.get('/games/lobster-run/rules', (_req, res) => sendHtml(res, 'games_lobster_run_rules.html'));
 app.get('/games/maze-runner', (_req, res) => sendHtml(res, 'games_maze_runner.html'));
+app.get('/games/glacier-run', (_req, res) => sendHtml(res, 'games_glacier_run.html'));
 
 // Back-compat: /rules points at featured game
 app.get('/rules', (_req, res) => res.redirect(302, '/games/lobster-run/rules'));
@@ -127,7 +131,7 @@ app.get('/api/agents/:agentId', a(async (req: express.Request, res: express.Resp
 const activeRuns = new Map<
   string,
   {
-    gameId: 'lobster-run' | 'maze-runner';
+    gameId: GameId;
     run: any;
     agentId: string;
     claimed: boolean;
@@ -149,11 +153,17 @@ async function maybeCleanupStaleRunningRuns() {
   }
 }
 
+function fixedTurnsForGame(gameId: GameId) {
+  if (gameId === 'lobster-run') return 12;
+  if (gameId === 'maze-runner') return 100;
+  return 14;
+}
+
 app.get('/api/runs', a(async (req: express.Request, res: express.Response) => {
   await maybeCleanupStaleRunningRuns();
   const q = z
     .object({
-      game: z.enum(['lobster-run', 'maze-runner']).optional(),
+      game: z.enum(['lobster-run', 'maze-runner', 'glacier-run']).optional(),
       limit: z.coerce.number().int().min(1).max(200).optional()
     })
     .safeParse(req.query);
@@ -382,9 +392,9 @@ app.post(`${V1}/runs`, a(async (req: express.Request, res: express.Response) => 
   // NOTE: daily mode is locked to a fixed turnsTotal for fair leaderboard comparison.
   const body = z
     .object({
-      game: z.enum(['lobster-run', 'maze-runner']).default('lobster-run'),
+      game: z.enum(['lobster-run', 'maze-runner', 'glacier-run']).default('lobster-run'),
       mode: z.enum(['daily', 'free']).default('free'),
-      turns: z.number().int().min(5).max(50).optional(),
+      turns: z.number().int().min(5).max(100).optional(),
       seed: z.number().int().optional(),
       // Per-run metadata (declared by the agent). Display declaredModel publicly; keep declaredStack private for now.
       // IMPORTANT: validate aggressively to avoid abuse / prompt-injection / garbage.
@@ -400,12 +410,12 @@ app.post(`${V1}/runs`, a(async (req: express.Request, res: express.Response) => 
     return res.status(400).json({ error: 'invalid_request', details: body.error.flatten() });
   }
 
-  const gameId = body.data.game;
+  const gameId = body.data.game as GameId;
   const mode = body.data.mode;
   const seed = mode === 'daily' ? dailySeedForDate(new Date()) : body.data.seed;
 
   // Daily fixed turns for fair comparison.
-  const turnsTotal = mode === 'daily' ? (gameId === 'lobster-run' ? 12 : 100) : body.data.turns;
+  const turnsTotal = mode === 'daily' ? fixedTurnsForGame(gameId) : body.data.turns;
 
   const declaredModel = body.data.declaredModel?.trim() || null;
   const declaredStack = body.data.declaredStack?.trim() || null;
@@ -413,7 +423,9 @@ app.post(`${V1}/runs`, a(async (req: express.Request, res: express.Response) => 
   const run =
     gameId === 'lobster-run'
       ? createLobsterRun({ seed, turnsTotal: turnsTotal ?? 12, mode, playerName: agent.name })
-      : createMazeRun({ seed: seed ?? dailySeedForDate(new Date()), turnsTotal: turnsTotal ?? 100, mode, playerName: agent.name });
+      : gameId === 'maze-runner'
+        ? createMazeRun({ seed: seed ?? dailySeedForDate(new Date()), turnsTotal: turnsTotal ?? 100, mode, playerName: agent.name })
+        : createGlacierRun({ seed: seed ?? dailySeedForDate(new Date()), turnsTotal: turnsTotal ?? 14, mode, playerName: agent.name });
 
   // Persist run start (and later completion) to Postgres.
   await saveRun(run, agent.id, gameId, { declaredModel, declaredStack });
@@ -497,6 +509,15 @@ app.get(`${V1}/runs/:runId/state`, a(async (req: express.Request, res: express.R
     });
   }
 
+  if (active.gameId === 'glacier-run') {
+    return res.json({
+      run: { id: run.id, status: run.status, turn: run.turn, turnsTotal: run.turnsTotal, mode: run.mode, game: active.gameId },
+      public: run.public,
+      you: run.player,
+      legalActions: getLegalGlacierActions(run)
+    });
+  }
+
   return res.json({
     run: { id: run.id, status: run.status, turn: run.turn, turnsTotal: run.turnsTotal, mode: run.mode, game: active.gameId },
     public: run.public,
@@ -554,14 +575,23 @@ app.post(`${V1}/runs/:runId/action`, a(async (req: express.Request, res: express
             ])
           })
           .safeParse(req.body ?? {})
-      : z
-          .object({
-            turn: z.number().int(),
-            action: z.discriminatedUnion('type', [
-              z.object({ type: z.enum(['UP', 'DOWN', 'LEFT', 'RIGHT', 'WAIT']) })
-            ])
-          })
-          .safeParse(req.body ?? {});
+      : active.gameId === 'maze-runner'
+        ? z
+            .object({
+              turn: z.number().int(),
+              action: z.discriminatedUnion('type', [
+                z.object({ type: z.enum(['UP', 'DOWN', 'LEFT', 'RIGHT', 'WAIT']) })
+              ])
+            })
+            .safeParse(req.body ?? {})
+        : z
+            .object({
+              turn: z.number().int(),
+              action: z.discriminatedUnion('type', [
+                z.object({ type: z.enum(['RIDGE', 'ICEFALL', 'SCAVENGE', 'CAMP']) })
+              ])
+            })
+            .safeParse(req.body ?? {});
 
   if (!body.success) {
     return res.status(400).json({ error: 'invalid_request', details: body.error.flatten() });
@@ -570,8 +600,10 @@ app.post(`${V1}/runs/:runId/action`, a(async (req: express.Request, res: express
   try {
     if (active.gameId === 'lobster-run') {
       submitLobsterAction(run, body.data.turn, body.data.action as any);
-    } else {
+    } else if (active.gameId === 'maze-runner') {
       submitMazeAction(run, body.data.turn, body.data.action as any);
+    } else {
+      submitGlacierAction(run, body.data.turn, body.data.action as any);
     }
 
     if (run.status === 'finished') {
@@ -580,7 +612,7 @@ app.post(`${V1}/runs/:runId/action`, a(async (req: express.Request, res: express
 
       // Only claimed agents appear on leaderboard (soft gating)
       // For fairness, only record daily runs that use the fixed turn count.
-      const fixedTurns = active.gameId === 'lobster-run' ? 12 : 100;
+      const fixedTurns = fixedTurnsForGame(active.gameId);
       if (agent.status === 'claimed' && run.mode === 'daily' && run.turnsTotal === fixedTurns) {
         await recordScore(
           {
@@ -618,6 +650,17 @@ app.post(`${V1}/runs/:runId/action`, a(async (req: express.Request, res: express
         },
         score: run.player.score,
         you: { x: you.x, y: you.y, turnsUsed: you.turnsUsed, turnsRemaining: you.turnsRemaining, result: you.result }
+      });
+    }
+
+    if (active.gameId === 'glacier-run') {
+      return res.json({
+        ok: true,
+        status: run.status,
+        turn: run.turn,
+        public: run.public,
+        score: run.player.score,
+        you: run.player
       });
     }
 

@@ -250,7 +250,36 @@
         if (!a) return '';
         if (a.type === 'BUY') return `BUY ${a.qty} ${a.item}`;
         if (a.type === 'UPGRADE') return `UPGRADE x${a.qty}`;
+        if (a.type === 'RIDGE') return 'RIDGE';
+        if (a.type === 'ICEFALL') return 'ICEFALL';
+        if (a.type === 'SCAVENGE') return 'SCAVENGE';
+        if (a.type === 'CAMP') return 'CAMP';
         return a.type;
+      }
+
+      function gameInfo(gameId) {
+        if (gameId === 'maze-runner') {
+          return {
+            label: 'Maze Runner',
+            replayLabel: 'Maze Runner — replay',
+            color: '#ff9900',
+            glow: 'rgba(255,153,0,0.25)'
+          };
+        }
+        if (gameId === 'glacier-run') {
+          return {
+            label: 'Glacier Run',
+            replayLabel: 'Glacier Run — replay',
+            color: '#6fd5ff',
+            glow: 'rgba(111,213,255,0.25)'
+          };
+        }
+        return {
+          label: 'Lobster Run',
+          replayLabel: 'Lobster Run — replay',
+          color: '#28a745',
+          glow: 'rgba(40,167,69,0.25)'
+        };
       }
 
       function fmtRelative(iso) {
@@ -343,6 +372,7 @@
       }
 
       async function renderShareCard(meta) {
+        const info = gameInfo(meta.gameId);
         // 1200x630 = standard social preview aspect
         const W = 1200, H = 630;
         const c = document.createElement('canvas');
@@ -351,7 +381,7 @@
 
         // Background
         const grad = ctx.createRadialGradient(240, 120, 50, 240, 120, 820);
-        grad.addColorStop(0, 'rgba(40,167,69,0.25)');
+        grad.addColorStop(0, info.glow);
         grad.addColorStop(1, 'rgba(18,18,18,1)');
         ctx.fillStyle = grad;
         ctx.fillRect(0, 0, W, H);
@@ -395,12 +425,12 @@
           // Center the badge near the top of the inner card.
           const bx = Math.round((W - bw) / 2);
           const by = 54 + 18;
-          ctx.fillStyle = 'rgba(40,167,69,0.18)';
-          ctx.strokeStyle = 'rgba(40,167,69,0.55)';
+          ctx.fillStyle = info.glow;
+          ctx.strokeStyle = info.color;
           drawRoundedRect(ctx, bx, by, bw, bh, 14);
           ctx.fill();
           ctx.stroke();
-          ctx.fillStyle = '#28a745';
+          ctx.fillStyle = info.color;
           ctx.fillText(text, bx + padX, by + 34);
           ctx.restore();
         }
@@ -412,13 +442,13 @@
 
         ctx.fillStyle = 'rgba(255,255,255,0.78)';
         ctx.font = '600 22px Inter, system-ui';
-        ctx.fillText('Lobster Run — replay', 96, 190);
+        ctx.fillText(info.replayLabel, 96, 190);
 
         ctx.fillStyle = 'rgba(255,255,255,0.85)';
         ctx.font = '800 40px Inter, system-ui';
         ctx.fillText(`${meta.agentName}`, 96, 270);
 
-        ctx.fillStyle = '#28a745';
+        ctx.fillStyle = info.color;
         ctx.font = '900 84px Inter, system-ui';
         ctx.fillText(String(meta.score ?? ''), 96, 370);
 
@@ -458,10 +488,10 @@
         return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
       }
 
-      async function getRankBadge(runId, agentName, score) {
+      async function getRankBadge(runId, agentName, score, gameId) {
         try {
           const date = isoDateUTC(new Date());
-          const data = await j(`/api/leaderboard/daily?game=lobster-run&date=${encodeURIComponent(date)}&limit=10`);
+          const data = await j(`/api/leaderboard/daily?game=${encodeURIComponent(gameId || 'lobster-run')}&date=${encodeURIComponent(date)}&limit=10`);
           const lb = data.leaderboard || [];
           const idx = lb.findIndex(e => e.runId === runId || (e.name === agentName && e.score === score));
           if (idx < 0) return null;
@@ -490,14 +520,23 @@
 
           // Detect game by replay event kinds.
           const isMaze = events.some(e => String(e.kind || '').startsWith('MAZE_'));
+          const isGlacier = events.some(e => String(e.kind || '').startsWith('GLACIER_'));
 
-          const created = isMaze ? events.find(e => e.kind === 'MAZE_RUN_CREATED') : events.find(e => e.kind === 'RUN_CREATED');
-          const lastResolved = isMaze ? [...events].reverse().find(e => e.kind === 'MAZE_TURN_RESOLVED') : [...events].reverse().find(e => e.kind === 'TURN_RESOLVED');
+          const created = isMaze
+            ? events.find(e => e.kind === 'MAZE_RUN_CREATED')
+            : isGlacier
+              ? events.find(e => e.kind === 'GLACIER_RUN_CREATED')
+              : events.find(e => e.kind === 'RUN_CREATED');
+          const lastResolved = isMaze
+            ? [...events].reverse().find(e => e.kind === 'MAZE_TURN_RESOLVED')
+            : isGlacier
+              ? [...events].reverse().find(e => e.kind === 'GLACIER_TURN_RESOLVED')
+              : [...events].reverse().find(e => e.kind === 'TURN_RESOLVED');
 
           // For deltas in the UI (lobster only)
           const snapshots = new Map();
           for (const ev of events) {
-            if (ev.kind === 'TURN_RESOLVED' && ev.snapshot) snapshots.set(ev.turn, ev.snapshot);
+            if ((ev.kind === 'TURN_RESOLVED' || ev.kind === 'GLACIER_TURN_RESOLVED') && ev.snapshot) snapshots.set(ev.turn, ev.snapshot);
           }
 
           // Maze static data (maze only)
@@ -511,7 +550,7 @@
           const agentName = state?.you?.name || created?.playerName || 'Unknown';
           const mode = state?.run?.mode || created?.mode || 'daily';
           const turnsTotal = state?.run?.turnsTotal || created?.turnsTotal || '?';
-          const gameId = state?.run?.game || created?.game || created?.gameId || null;
+          const gameId = state?.run?.game || created?.game || created?.gameId || (isGlacier ? 'glacier-run' : isMaze ? 'maze-runner' : 'lobster-run');
 
           const playedAt = created?.t || null;
           const declaredModel = replay.declaredModel || null;
@@ -566,8 +605,8 @@
 
           // Hook up UI actions
           const url = `${location.origin}/replay/${encodeURIComponent(runId)}`;
-          const badge = await getRankBadge(runId, agentName, score);
-          const metaForCard = { agentName, score, playedAt, declaredModel, url, rankText: badge?.text || null };
+          const badge = await getRankBadge(runId, agentName, score, gameId);
+          const metaForCard = { agentName, score, playedAt, declaredModel, url, rankText: badge?.text || null, gameId };
 
           document.getElementById('copyLink')?.addEventListener('click', async () => {
             try {
@@ -600,13 +639,13 @@
           // Build per-turn timeline objects
           const turns = new Map();
           for (const ev of events) {
-            if (!isMaze && ev.kind === 'TURN_STARTED') {
+            if (!isMaze && !isGlacier && ev.kind === 'TURN_STARTED') {
               turns.set(ev.turn, { turn: ev.turn, started: ev, action: null, resolved: null });
-            } else if (!isMaze && ev.kind === 'ACTION') {
+            } else if (!isMaze && !isGlacier && ev.kind === 'ACTION') {
               const t = turns.get(ev.turn) || { turn: ev.turn, started: null, action: null, resolved: null };
               t.action = ev;
               turns.set(ev.turn, t);
-            } else if (!isMaze && ev.kind === 'TURN_RESOLVED') {
+            } else if (!isMaze && !isGlacier && ev.kind === 'TURN_RESOLVED') {
               const t = turns.get(ev.turn) || { turn: ev.turn, started: null, action: null, resolved: null };
               t.resolved = ev;
               turns.set(ev.turn, t);
@@ -619,6 +658,18 @@
               t.action = ev;
               turns.set(ev.turn, t);
             } else if (isMaze && ev.kind === 'MAZE_TURN_RESOLVED') {
+              const t = turns.get(ev.turn) || { turn: ev.turn, started: null, action: null, resolved: null };
+              t.resolved = ev;
+              turns.set(ev.turn, t);
+            }
+
+            if (isGlacier && ev.kind === 'GLACIER_TURN_STARTED') {
+              turns.set(ev.turn, { turn: ev.turn, started: ev, action: null, resolved: null });
+            } else if (isGlacier && ev.kind === 'GLACIER_ACTION') {
+              const t = turns.get(ev.turn) || { turn: ev.turn, started: null, action: null, resolved: null };
+              t.action = ev;
+              turns.set(ev.turn, t);
+            } else if (isGlacier && ev.kind === 'GLACIER_TURN_RESOLVED') {
               const t = turns.get(ev.turn) || { turn: ev.turn, started: null, action: null, resolved: null };
               t.resolved = ev;
               turns.set(ev.turn, t);
@@ -652,16 +703,31 @@
                 const t = String(it.action?.action?.type || '');
                 return t && t !== 'WAIT';
               }).map(it => it.turn).slice(0, 3))
+            : isGlacier
+              ? new Set(withDelta.filter(it => {
+                  const type = String(it.action?.action?.type || '');
+                  return type === 'ICEFALL' || type === 'SCAVENGE' || it.deltaScore >= 12;
+                }).map(it => it.turn).slice(0, 4))
             : new Set([...sellTurns.map(t => t.turn), ...topDeltas]);
 
           // Highlights summary (human-friendly)
-          if (!isMaze) {
+          if (!isMaze && !isGlacier) {
             const best = [...withDelta].sort((a,b) => b.deltaScore - a.deltaScore)[0];
             const bestLine = best && best.deltaScore > 0 ? `Biggest swing: Turn ${best.turn} (+${best.deltaScore})` : null;
             const sellsLine = sellTurns.length ? `Sells: ${sellTurns.length} turn${sellTurns.length === 1 ? '' : 's'}` : null;
             const hiEl = document.getElementById('highlights');
             if (hiEl) {
               hiEl.innerHTML = [bestLine, sellsLine].filter(Boolean).map(x => `<div>${esc(x)}</div>`).join('');
+            }
+          } else if (isGlacier) {
+            const best = [...withDelta].sort((a,b) => b.deltaScore - a.deltaScore)[0];
+            const suppliesTurn = withDelta.find(it => it.action?.action?.type === 'SCAVENGE');
+            const hiEl = document.getElementById('highlights');
+            if (hiEl) {
+              hiEl.innerHTML = [
+                best && best.deltaScore > 0 ? `Best climb: Turn ${best.turn} (+${best.deltaScore} altitude)` : null,
+                suppliesTurn ? `Supply cache found on Turn ${suppliesTurn.turn}` : null
+              ].filter(Boolean).map(x => `<div>${esc(x)}</div>`).join('');
             }
           } else {
             const hiEl = document.getElementById('highlights');
@@ -818,6 +884,7 @@
             const resolved = it.resolved;
             const market = started?.marketPrice != null ? `$${started.marketPrice}` : '?';
             const weather = started?.weather || '?';
+            const hazard = started?.hazard || '?';
             const actionStr = action ? prettyAction(action) : '—';
 
             const d = it.deltaScore;
@@ -837,6 +904,15 @@
               <span class="chip"><span class="k">result</span><span class="v">${esc(s.result ?? '')}</span><span class="d"></span></span>
             </div>` : '';
 
+            const glacierSnap = resolved ? `<div class="chips">
+              <span class="chip pos"><span class="k">alt</span><span class="v">${esc(s.altitude ?? '')}</span><span class="d">${esc(deltaChip(prevSnap, s, 'altitude'))}</span></span>
+              <span class="chip bait"><span class="k">food</span><span class="v">${esc(s.food ?? '')}</span><span class="d">${esc(deltaChip(prevSnap, s, 'food'))}</span></span>
+              <span class="chip ice"><span class="k">warmth</span><span class="v">${esc(s.warmth ?? '')}</span><span class="d">${esc(deltaChip(prevSnap, s, 'warmth'))}</span></span>
+              <span class="chip fuel"><span class="k">stamina</span><span class="v">${esc(s.stamina ?? '')}</span><span class="d">${esc(deltaChip(prevSnap, s, 'stamina'))}</span></span>
+              <span class="chip cap"><span class="k">rope</span><span class="v">${esc(s.rope ?? '')}</span><span class="d">${esc(deltaChip(prevSnap, s, 'rope'))}</span></span>
+              <span class="chip turns"><span class="k">result</span><span class="v">${esc(s.result ?? '')}</span><span class="d"></span></span>
+            </div>` : '';
+
             const lobsterSnap = resolved ? `<div class="chips">
               <span class="chip cash"><span class="k">$</span><span class="v">${esc(s.cash ?? '')}</span><span class="d">${esc(deltaChip(prevSnap, s, 'cash'))}</span></span>
               <span class="chip bait"><span class="k">bait</span><span class="v">${esc(s.bait ?? '')}</span><span class="d">${esc(deltaChip(prevSnap, s, 'bait'))}</span></span>
@@ -846,7 +922,7 @@
               <span class="chip"><span class="k">lobsters</span><span class="v">${esc(s.lobsters ?? '')}</span><span class="d">${esc(deltaChip(prevSnap, s, 'lobsters'))}</span></span>
             </div>` : '';
 
-            const snap = isMaze ? mazeSnap : lobsterSnap;
+            const snap = isMaze ? mazeSnap : isGlacier ? glacierSnap : lobsterSnap;
 
             const body = resolved ? `<div class="turnBody">
               <div class="muted" style="margin-top:8px">Result: ${isMaze ? 'turn resolved' : `score ${esc(resolved.score ?? it.score)}`}</div>
@@ -856,6 +932,8 @@
 
             const summaryMeta = isMaze
               ? `<span class="sumMeta">Pos (${esc(started?.x ?? '?')},${esc(started?.y ?? '?')})</span>`
+              : isGlacier
+                ? `<span class="sumMeta">${esc(weather)} · ${esc(hazard)}</span>`
               : `<span class="sumMeta">Market ${esc(market)} · Weather ${esc(weather)}</span>`;
 
             return `<details class="turnCard" data-turn="${esc(it.turn)}"${open}>
