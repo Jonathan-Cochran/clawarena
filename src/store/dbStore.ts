@@ -163,9 +163,22 @@ type PersistableRun = {
   mode: 'daily' | 'free';
   turnsTotal: number;
   status: 'running' | 'finished';
+  turn: number;
   player: { score: number };
   replay: any[];
 };
+
+function parseJsonMaybe(value: unknown) {
+  if (!value) return null;
+  if (typeof value === 'string') {
+    try {
+      return JSON.parse(value);
+    } catch {
+      return null;
+    }
+  }
+  return value;
+}
 
 export async function saveRun(
   state: PersistableRun,
@@ -427,29 +440,49 @@ export async function listRuns(filter?: { gameId?: string; limit?: number }) {
   const where = gameId ? 'where r.game_id = $1' : '';
   if (gameId) params.push(gameId);
 
-  const r = await sql<{ id: string; status: string; mode: string; turns_total: number; created_at: string; score: number; seed: string; name: string; agent_id: string; game_id: string }>(
-    `select r.id, r.status, r.mode, r.turns_total, r.created_at, r.score, r.seed, r.agent_id, r.game_id, a.name
+  const r = await sql<{
+    id: string;
+    status: string;
+    mode: string;
+    turns_total: number;
+    created_at: string;
+    updated_at: string | null;
+    score: number;
+    seed: string;
+    name: string;
+    agent_id: string;
+    game_id: string;
+    state_json: any;
+  }>(
+    `select r.id, r.status, r.mode, r.turns_total, r.created_at, r.updated_at, r.score, r.seed, r.agent_id, r.game_id, r.state_json, a.name
      from public.runs r
      join public.agents a on a.id = r.agent_id
      ${where}
-     order by r.created_at desc
+     order by coalesce(r.updated_at, r.created_at) desc
      limit ${limit}`,
     params
   );
 
-  return r.rows.map((row: (typeof r.rows)[number]) => ({
-    id: row.id,
-    status: row.status,
-    mode: row.mode,
-    gameId: row.game_id,
-    turn: row.turns_total,
-    turnsTotal: row.turns_total,
-    createdAt: row.created_at,
-    name: row.name,
-    agentId: row.agent_id,
-    score: row.score,
-    seed: Number(row.seed)
-  }));
+  return r.rows.map((row: (typeof r.rows)[number]) => {
+    const state = parseJsonMaybe(row.state_json) as { turn?: number; player?: { score?: number } } | null;
+    const turn = typeof state?.turn === 'number' ? state.turn : row.status === 'finished' ? row.turns_total : 1;
+    const score = typeof state?.player?.score === 'number' ? state.player.score : row.score;
+
+    return {
+      id: row.id,
+      status: row.status,
+      mode: row.mode,
+      gameId: row.game_id,
+      turn,
+      turnsTotal: row.turns_total,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      name: row.name,
+      agentId: row.agent_id,
+      score,
+      seed: Number(row.seed)
+    };
+  });
 }
 
 export async function getStats() {

@@ -14,10 +14,6 @@ const connectionString =
   process.env.POSTGRES_URL_NON_POOLING ??
   process.env.DATABASE_URL ??
   process.env.POSTGRES_URL;
-if (!connectionString) {
-  // Don't throw immediately at import time in case some scripts set env later.
-  // But most paths will require DB.
-}
 
 function poolConfigFromUrl(cs?: string) {
   if (!cs) return {};
@@ -58,8 +54,8 @@ export const pool = new pg.Pool({
 });
 
 export async function sql<T extends pg.QueryResultRow = any>(text: string, params?: any[]): Promise<pg.QueryResult<T>> {
-  if (!pool.options.connectionString) {
-    must('DATABASE_URL');
+  if (!connectionString) {
+    must('DATABASE_URL_NON_POOLING or POSTGRES_URL_NON_POOLING or DATABASE_URL or POSTGRES_URL');
   }
 
   const timeoutMs = 5000;

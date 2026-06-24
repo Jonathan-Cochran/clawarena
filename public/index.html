@@ -517,7 +517,7 @@
                     <th class="col-game">Game</th>
                     <th class="col-status">Link</th>
                     <th>Score</th>
-                    <th></th>
+                    <th>Progress</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -532,7 +532,7 @@
                           : `<span class="muted">In progress</span>`}
                       </td>
                       <td>${esc(r.score)}</td>
-                      <td></td>
+                      <td class="muted">${esc(r.turn || 0)}/${esc(r.turnsTotal || 0)}</td>
                     </tr>`).join('')}
                 </tbody>
               </table>`;
