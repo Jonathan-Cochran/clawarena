@@ -38,3 +38,46 @@ assert.ok(
 );
 
 console.log('lobster-run v2 regression ok');
+
+const iceRun = createRun({
+  seed: 2,
+  turnsTotal: 2,
+  mode: 'daily',
+  playerName: 'Ice Regression Bot'
+});
+iceRun.player.lobsters = 5;
+iceRun.player.ice = 1;
+
+submitAction(iceRun, 1, { type: 'FISH_INSHORE' });
+
+const iceTurn = iceRun.replay.find((event) => event.kind === 'TURN_RESOLVED' && event.turn === 1);
+assert.ok(iceTurn && iceTurn.kind === 'TURN_RESOLVED');
+assert.equal(iceRun.player.ice, 0, 'ice should be consumed when protecting stored inventory');
+assert.ok(
+  iceTurn.notes.includes('Used 1 ice to protect stored lobster.'),
+  'replay should explain ice protection'
+);
+assert.equal(
+  iceTurn.notes.some((note) => note.includes('spoilage')),
+  false,
+  'ice should prevent spoilage for the protected turn'
+);
+
+const noIceRun = createRun({
+  seed: 2,
+  turnsTotal: 2,
+  mode: 'daily',
+  playerName: 'Spoilage Regression Bot'
+});
+noIceRun.player.lobsters = 5;
+
+submitAction(noIceRun, 1, { type: 'FISH_INSHORE' });
+
+const noIceTurn = noIceRun.replay.find((event) => event.kind === 'TURN_RESOLVED' && event.turn === 1);
+assert.ok(noIceTurn && noIceTurn.kind === 'TURN_RESOLVED');
+assert.ok(
+  noIceTurn.notes.some((note) => note === 'Lost 5 lobster to spoilage (no ice).'),
+  'same deterministic turn should spoil stored inventory without ice'
+);
+
+console.log('lobster-run ice consumption regression ok');

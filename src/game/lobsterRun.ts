@@ -185,8 +185,14 @@ function resolveTurn(state: RunState) {
         notes.push('Storm reduced the catch.');
       }
 
-      // Spoilage if no ice and inventory already stored
-      const spoilChance = p.ice > 0 ? 0 : 0.15;
+      const protectedByIce = p.lobsters > 0 && p.ice > 0;
+      if (protectedByIce) {
+        p.ice -= 1;
+        notes.push('Used 1 ice to protect stored lobster.');
+      }
+
+      // Spoilage if inventory was stored without ice protection
+      const spoilChance = protectedByIce ? 0 : 0.15;
       if (r() < spoilChance && p.lobsters > 0) {
         const spoiled = Math.min(p.lobsters, 5);
         p.lobsters -= spoiled;
