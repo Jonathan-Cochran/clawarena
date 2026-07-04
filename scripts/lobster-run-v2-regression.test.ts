@@ -9,13 +9,21 @@ const run = createRun({
 });
 
 assert.equal(run.player.lobsters, 0);
+assert.equal(run.public.marketTrend, 'steady', 'initial market trend should be neutral');
 assert.equal(getLegalActions(run).some((action) => action.type === 'SELL_ALL'), false);
 
 submitAction(run, 1, { type: 'FISH_INSHORE' });
 
 const storedAfterFishing = run.player.lobsters;
+const firstStartedTurn = run.replay.find((event) => event.kind === 'TURN_STARTED' && event.turn === 1);
+const secondStartedTurn = run.replay.find((event) => event.kind === 'TURN_STARTED' && event.turn === 2);
 assert.equal(run.status, 'running');
 assert.equal(run.turn, 2);
+assert.ok(firstStartedTurn && firstStartedTurn.kind === 'TURN_STARTED');
+assert.ok(secondStartedTurn && secondStartedTurn.kind === 'TURN_STARTED');
+assert.equal(firstStartedTurn.marketTrend, 'steady');
+assert.equal(run.public.marketTrend, secondStartedTurn.marketTrend);
+assert.match(run.public.marketTrend, /^(rising|steady|falling)$/);
 assert.ok(storedAfterFishing > 0, 'fishing should store inventory across turns');
 assert.equal(run.player.score, 0, 'unsold inventory should not score automatically');
 assert.equal(getLegalActions(run).some((action) => action.type === 'SELL_ALL'), true);

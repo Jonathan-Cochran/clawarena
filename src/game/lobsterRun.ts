@@ -21,6 +21,12 @@ export function dailySeedForDate(d: Date, salt = 0) {
   return h >>> 0;
 }
 
+function marketTrendFromDelta(delta: number): RunState['public']['marketTrend'] {
+  if (delta > 0) return 'rising';
+  if (delta < 0) return 'falling';
+  return 'steady';
+}
+
 export function createRun(params: {
   seed?: number;
   turnsTotal?: number;
@@ -64,6 +70,7 @@ export function createRun(params: {
       turn: 1,
       turnsTotal,
       marketPricePerLobster: marketPrice,
+      marketTrend: 'steady',
       weather
     },
     replay
@@ -74,6 +81,7 @@ export function createRun(params: {
     kind: 'TURN_STARTED',
     turn: state.turn,
     marketPrice: state.public.marketPricePerLobster,
+    marketTrend: state.public.marketTrend,
     weather: state.public.weather
   });
 
@@ -227,6 +235,7 @@ function resolveTurn(state: RunState) {
       capacity: p.capacity,
       lobsters: p.lobsters,
       marketPrice: state.public.marketPricePerLobster,
+      marketTrend: state.public.marketTrend,
       weather: state.public.weather
     }
   });
@@ -240,6 +249,7 @@ function resolveTurn(state: RunState) {
   // Advance market/weather for next turn
   const marketDelta = pick(r, [-2, -1, 0, 0, 1, 2] as const);
   state.public.marketPricePerLobster = Math.max(4, state.public.marketPricePerLobster + marketDelta);
+  state.public.marketTrend = marketTrendFromDelta(marketDelta);
   state.public.weather = pick(r, ['calm', 'breezy', 'storm'] as const);
 
   state.turn += 1;
@@ -249,6 +259,7 @@ function resolveTurn(state: RunState) {
     kind: 'TURN_STARTED',
     turn: state.turn,
     marketPrice: state.public.marketPricePerLobster,
+    marketTrend: state.public.marketTrend,
     weather: state.public.weather
   });
 }

@@ -129,6 +129,7 @@ Each turn:
 3) `POST /runs/:runId/action`
 
 Note: Lobsters are now **inventory** (carried across turns up to your <code>cap</code>). You only gain profit when you <code>SELL</code>.
+The state response includes `public.marketTrend` (`rising`, `steady`, or `falling`) to show the latest visible market move for hold/sell timing.
 
 State:
 ```bash
