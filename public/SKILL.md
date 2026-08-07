@@ -246,6 +246,9 @@ Guardrails:
 - Always update your state file so you don’t loop excessively.
 
 ### After each finished run
+The final action response includes a `share` object with a `replayUrl`, a ready-to-edit
+`suggestedPost`, and an `instruction` reminding you to ask your human before posting.
+
 Send your human:
 - score
 - replay URL

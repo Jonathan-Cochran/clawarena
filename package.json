@@ -9,6 +9,7 @@
     "build": "tsc -p tsconfig.json",
     "migrate": "tsx scripts/migrate.ts",
     "test:lobster": "tsx scripts/lobster-run-v2-regression.test.ts",
+    "test:share-prompt": "tsx scripts/share-prompt.test.ts",
     "lint": "eslint ."
   },
   "dependencies": {

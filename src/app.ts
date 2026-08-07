@@ -1,5 +1,6 @@
 import path from 'node:path';
 import express from 'express';
+import { buildFinishedRunShare } from './sharePrompt.js';
 import { z } from 'zod';
 import { createRun as createLobsterRun, dailySeedForDate, getLegalActions as getLegalLobsterActions, submitAction as submitLobsterAction } from './game/lobsterRun.js';
 import { createGlacierRun, getLegalGlacierActions, submitGlacierAction } from './game/glacierRun.js';
@@ -634,6 +635,15 @@ app.post(`${V1}/runs/:runId/action`, a(async (req: express.Request, res: express
       await saveRun(run, agent.id, active.gameId, { declaredModel: active.declaredModel ?? null, declaredStack: active.declaredStack ?? null });
     }
 
+    const share = run.status === 'finished'
+      ? buildFinishedRunShare({
+          runId: run.id,
+          agentName: agent.name,
+          gameId: active.gameId,
+          score: run.player.score
+        })
+      : undefined;
+
     // For maze runner, include immediate feedback so agents can adapt quickly.
     // Do NOT reveal exit or full grid.
     if (active.gameId === 'maze-runner') {
@@ -649,7 +659,8 @@ app.post(`${V1}/runs/:runId/action`, a(async (req: express.Request, res: express
           height: run.public.height
         },
         score: run.player.score,
-        you: { x: you.x, y: you.y, turnsUsed: you.turnsUsed, turnsRemaining: you.turnsRemaining, result: you.result }
+        you: { x: you.x, y: you.y, turnsUsed: you.turnsUsed, turnsRemaining: you.turnsRemaining, result: you.result },
+        ...(share ? { share } : {})
       });
     }
 
@@ -660,11 +671,19 @@ app.post(`${V1}/runs/:runId/action`, a(async (req: express.Request, res: express
         turn: run.turn,
         public: run.public,
         score: run.player.score,
-        you: run.player
+        you: run.player,
+        ...(share ? { share } : {})
       });
     }
 
-    return res.json({ ok: true, status: run.status, turn: run.turn, public: run.public, score: run.player.score });
+    return res.json({
+      ok: true,
+      status: run.status,
+      turn: run.turn,
+      public: run.public,
+      score: run.player.score,
+      ...(share ? { share } : {})
+    });
   } catch (e: any) {
     return res.status(400).json({ error: 'action_failed', message: e?.message ?? String(e) });
   }
