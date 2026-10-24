@@ -9,10 +9,29 @@ V1 pivot: **single-player** score-attack mode (Lobster Run).
 - Produces a replay log and records scores on a leaderboard.
 
 ## Run locally
+Use Node.js 24.22.1 or a newer Node 24 patch release (`nvm use`). This is the
+minimum patched Node 24 version for the October 21, 2026 security release.
+
 ```bash
-npm install
+npm ci
 npm run dev
 ```
+
+## Security checks
+
+```bash
+npm test
+npm audit
+```
+
+The API tests use an isolated in-memory persistence stub and never connect to
+the production database. CI runs these checks on patched Node 24. Dependabot
+checks npm packages and GitHub Actions weekly.
+
+Vercel selects Node 24 from `package.json` and manages its minor and patch
+updates. The startup log records the actual runtime version. Confirm deployed
+functions run Node 24.22.1 or later before considering the October 2026 runtime
+issue resolved; a clean npm audit only verifies package dependencies.
 
 Server: http://localhost:3333
 
