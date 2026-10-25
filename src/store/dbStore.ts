@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import type { LeaderboardEntry, RunId, RunState } from '../game/types.js';
+import type { LeaderboardEntry, RunId } from '../game/types.js';
 import { sql } from '../db.js';
 
 export type AgentRecord = {

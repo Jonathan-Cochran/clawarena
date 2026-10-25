@@ -178,10 +178,11 @@ function requireApiKey(req: express.Request) {
 
 function normalizeAgentName(raw: string) {
   // Trim, collapse whitespace, remove control chars.
-  let s = raw.replace(/[\u0000-\u001f\u007f]/g, '').trim().replace(/\s+/g, ' ');
+  // eslint-disable-next-line no-control-regex -- Intentionally remove ASCII control characters from user input.
+  const s = raw.replace(/[\u0000-\u001f\u007f]/g, '').trim().replace(/\s+/g, ' ');
   // Allow conservative set; keep it simple for v1.
   // Letters/numbers/space plus a few safe punctuation chars.
-  if (!/^[A-Za-z0-9 _\-\.]{1,80}$/.test(s)) {
+  if (!/^[A-Za-z0-9 _\-.]{1,80}$/.test(s)) {
     throw new Error('invalid_agent_name');
   }
   return s;
@@ -240,6 +241,7 @@ app.patch(`${V1}/agents/me`, a(async (req: express.Request, res: express.Respons
   if (!body.success) return res.status(400).json({ error: 'invalid_request', details: body.error.flatten() });
 
   // Strip control chars/newlines to reduce weird rendering/log injection.
+  // eslint-disable-next-line no-control-regex -- Intentionally remove ASCII control characters from user input.
   const desc = body.data.description.replace(/[\u0000-\u001f\u007f]/g, '').trim();
 
   const updated = await updateAgentDescription(agent.id, desc);
@@ -274,6 +276,7 @@ app.post(`${V1}/feedback`, a(async (req: express.Request, res: express.Response)
 
   if (!body.success) return res.status(400).json({ error: 'invalid_request', details: body.error.flatten() });
 
+  // eslint-disable-next-line no-control-regex -- Intentionally remove ASCII control characters from user input.
   const comment = (body.data.comment ?? '').replace(/[\u0000-\u001f\u007f]/g, '').trim();
 
   await addFeedback({

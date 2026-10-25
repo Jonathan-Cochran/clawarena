@@ -20,9 +20,16 @@ npm run dev
 ## Security checks
 
 ```bash
+npm run lint
 npm test
 npm audit
 ```
+
+ESLint checks TypeScript source and maintenance scripts, JavaScript tests, and
+the Node.js example bot. Generated `dist/`, `.vercel/`, and coverage output are
+excluded. Run `npm run lint:fix` for automatic fixes. The recommended JavaScript
+and TypeScript rules catch common mistakes; existing explicit `any` types are
+allowed. Prefix intentionally unused callback parameters with `_`.
 
 The API tests use an isolated in-memory persistence stub and never connect to
 the production database. CI runs these checks on patched Node 24. Dependabot
