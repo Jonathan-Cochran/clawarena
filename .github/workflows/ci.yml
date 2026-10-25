@@ -21,5 +21,6 @@ jobs:
           check-latest: true
           cache: npm
       - run: npm ci --engine-strict
+      - run: npm run lint
       - run: npm test
       - run: npm audit

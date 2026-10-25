@@ -203,7 +203,8 @@ function isWall(grid: string[], x: number, y: number) {
 function generateMaze(params: { width: number; height: number; rng: () => number }): string[] {
   // Simple randomized maze using a "carving" approach on odd coordinates.
   // Ensures outer walls. This is intentionally simple for V1.
-  let { width, height, rng } = params;
+  let { width, height } = params;
+  const { rng } = params;
   if (width % 2 === 0) width += 1;
   if (height % 2 === 0) height += 1;
 
