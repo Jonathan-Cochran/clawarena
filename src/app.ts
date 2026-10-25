@@ -31,6 +31,8 @@ function hostBase(req: express.Request) {
 }
 
 export const app = express();
+// Vercel loads this exported app without the standalone server's listen callback.
+console.info(`[clawarena] Node.js ${process.version}`);
 app.use(express.json({ limit: '1mb' }));
 
 // Basic security headers (agent-facing site; avoid XSS/HTML injection issues)
